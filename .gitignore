@@ -12,6 +12,7 @@ env/
 .pytest_cache/
 .pytest-tmp/
 .pytest_tmp/
+test_tmp/
 .coverage
 htmlcov/
 .mypy_cache/

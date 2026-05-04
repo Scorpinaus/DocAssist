@@ -63,9 +63,29 @@ def test_ask_uses_selected_version_and_returns_sources(tmp_path: Path):
     payload = response.json()
     assert payload["answer"].startswith("Step 1")
     assert payload["sources"][0]["path"] == "api/java/lang/Runnable.html"
+    assert "workspace" not in payload
     assert retriever.calls == [("jdk8", "How do I run code in a thread?", 6)]
     assert "Target Java version: jdk8" in ollama.prompt
-    assert "Use only the provided documentation context" in ollama.prompt
+    assert "Temporary task workspace:" in ollama.prompt
+
+
+def test_ask_can_return_temporary_workspace_when_requested(tmp_path: Path):
+    client, _, _ = make_client(tmp_path)
+
+    response = client.post(
+        "/api/ask",
+        json={
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "includeWorkspace": True,
+        },
+    )
+
+    assert response.status_code == 200
+    workspace = response.json()["workspace"]
+    assert workspace["task"]["version"] == "jdk8"
+    assert workspace["task"]["evidence"][0]["id"] == "E1"
+    assert workspace["task"]["evidence"][0]["path"] == "api/java/lang/Runnable.html"
 
 
 def test_ask_rejects_unknown_version(tmp_path: Path):

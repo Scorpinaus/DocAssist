@@ -7,8 +7,9 @@ from backend.app.doc_loader import available_versions
 from backend.app.ingest import ingest_version
 from backend.app.models import AskRequest, AskResponse, IngestRequest, IngestResponse, Source, VersionsResponse
 from backend.app.ollama_client import OllamaClient
-from backend.app.prompts import build_rag_messages
+from backend.app.prompts import build_workspace_messages
 from backend.app.retriever import Retriever
+from backend.app.task_workspace import build_answer_workspace
 
 
 def create_app(
@@ -43,12 +44,13 @@ def create_app(
         _ensure_version_exists(settings, request.version)
         return IngestResponse(**ingest_version(settings, request.version, active_ollama))
 
-    @app.post("/api/ask", response_model=AskResponse)
+    @app.post("/api/ask", response_model=AskResponse, response_model_exclude_none=True)
     def ask(request: AskRequest):
         """Answer a question using retrieved local documentation context."""
         _ensure_version_exists(settings, request.version)
         chunks = active_retriever.retrieve(request.version, request.query, settings.top_k_results)
-        messages = build_rag_messages(request.version, request.query, chunks)
+        workspace = build_answer_workspace(request.version, request.query, chunks)
+        messages = build_workspace_messages(workspace)
         answer = active_ollama.chat(messages)
         return AskResponse(
             answer=answer,
@@ -56,6 +58,7 @@ def create_app(
                 Source(title=chunk.title, path=chunk.path, snippet=chunk.text[:500], score=chunk.score)
                 for chunk in chunks
             ],
+            workspace=workspace if request.includeWorkspace else None,
         )
 
     if settings.frontend_dir.exists():
