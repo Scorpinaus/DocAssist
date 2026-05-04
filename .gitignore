@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+
+# Test and tooling caches
+.pytest_cache/
+.pytest-tmp/
+.pytest_tmp/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Local runtime data
+indexes/*
+!indexes/.gitkeep
+!indexes/jdk8/
+indexes/jdk8/*
+!indexes/jdk8/.gitkeep
+docs/*
+!docs/jdk8/
+docs/jdk8/*
+!docs/jdk8/.gitkeep
+
+# Environment and local config
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

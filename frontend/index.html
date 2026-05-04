@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DocAssist Java Agent</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace">
+        <div class="toolbar">
+          <label for="version">Java version</label>
+          <select id="version"></select>
+          <button id="ingest" type="button">Ingest</button>
+        </div>
+
+        <form id="ask-form" class="ask-panel">
+          <label for="query">Question</label>
+          <textarea
+            id="query"
+            name="query"
+            rows="4"
+            placeholder="How do I create a custom annotation?"
+            required
+          ></textarea>
+          <button type="submit">Ask</button>
+        </form>
+
+        <section class="answer-panel" aria-live="polite">
+          <h1>Answer</h1>
+          <pre id="answer"></pre>
+        </section>
+
+        <section class="sources-panel">
+          <h2>Sources</h2>
+          <div id="sources"></div>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
