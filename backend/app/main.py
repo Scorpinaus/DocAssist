@@ -1,5 +1,7 @@
+import json
+
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.chat_client_factory import create_chat_client, normalize_chat_provider
@@ -104,6 +106,61 @@ def create_app(
             workspace=workspace if request.includeWorkspace else None,
         )
 
+    @app.post("/api/ask/events")
+    def ask_events(request: AskRequest):
+        """Stream backend progress events while answering a question."""
+        _ensure_version_exists(settings, request.version)
+        provider = _selected_chat_provider(request.chatProvider, settings)
+
+        def stream_events():
+            try:
+                yield _sse_event({"type": "stage", "message": "Preparing question..."})
+                yield _sse_event({"type": "stage", "message": "Searching local documentation..."})
+                chunks = active_retriever.retrieve(request.version, request.query, settings.top_k_results)
+                yield _sse_event(
+                    {
+                        "type": "stage",
+                        "message": "Source material retrieved.",
+                        "sources": len(chunks),
+                    }
+                )
+                yield _sse_event({"type": "stage", "message": "Planning response..."})
+                workspace = build_answer_workspace(request.version, request.query, chunks)
+                messages = build_workspace_messages(workspace)
+                active_chat = active_chat_clients.get(provider) or create_chat_client(settings, provider)
+                yield _sse_event({"type": "stage", "message": f"Asking {_chat_provider_label(provider)}..."})
+                answer = active_chat.chat(messages)
+                sources = [
+                    Source(title=chunk.title, path=chunk.path, snippet=chunk.text[:500], score=chunk.score)
+                    for chunk in chunks
+                ]
+                active_history.add(
+                    version=request.version,
+                    question=request.query,
+                    answer=answer,
+                    sources=sources,
+                    workspace=workspace,
+                )
+                yield _sse_event(
+                    {
+                        "type": "complete",
+                        "answer": answer,
+                        "sources": [source.model_dump(mode="json") for source in sources],
+                        "workspace": workspace.model_dump(mode="json") if request.includeWorkspace else None,
+                    }
+                )
+            except Exception as error:
+                yield _sse_event({"type": "error", "message": str(error)})
+
+        return StreamingResponse(
+            stream_events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     @app.get("/api/history", response_model=HistoryResponse)
     def history():
         """Return saved question history, newest first."""
@@ -143,6 +200,20 @@ def _selected_chat_provider(requested_provider: str | None, settings: Settings) 
     if provider not in _CHAT_PROVIDERS:
         raise HTTPException(status_code=400, detail=f"Unsupported chat provider: {requested_provider}")
     return provider
+
+
+def _chat_provider_label(provider: str) -> str:
+    """Return a display label for backend progress events."""
+    if provider == "nanogpt":
+        return "NanoGPT"
+    if provider == "ollama":
+        return "Ollama"
+    return provider
+
+
+def _sse_event(payload: dict) -> str:
+    """Format one Server-Sent Event data frame."""
+    return f"data: {json.dumps(payload)}\n\n"
 
 
 app = create_app()

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from fastapi.testclient import TestClient
 
@@ -43,6 +44,14 @@ class FakeNanoGPTClient:
         self.calls += 1
         self.prompt = messages[-1]["content"]
         return "NanoGPT answer."
+
+
+def sse_payloads(response):
+    payloads = []
+    for line in response.text.splitlines():
+        if line.startswith("data: "):
+            payloads.append(json.loads(line.removeprefix("data: ")))
+    return payloads
 
 
 def make_client(tmp_path: Path):
@@ -136,6 +145,93 @@ def test_ask_rejects_unknown_chat_provider(tmp_path: Path):
 
     response = client.post(
         "/api/ask",
+        json={
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "chatProvider": "unknown",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Unsupported chat provider" in response.json()["detail"]
+
+
+def test_ask_events_streams_backend_stages_and_complete_payload(tmp_path: Path):
+    client, retriever, ollama = make_client(tmp_path)
+
+    response = client.post(
+        "/api/ask/events",
+        json={
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "chatProvider": "ollama",
+            "includeWorkspace": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    payloads = sse_payloads(response)
+    stage_messages = [payload["message"] for payload in payloads if payload["type"] == "stage"]
+    assert stage_messages == [
+        "Preparing question...",
+        "Searching local documentation...",
+        "Source material retrieved.",
+        "Planning response...",
+        "Asking Ollama...",
+    ]
+    complete = payloads[-1]
+    assert complete["type"] == "complete"
+    assert complete["answer"].startswith("Step 1")
+    assert complete["sources"][0]["path"] == "api/java/lang/Runnable.html"
+    assert complete["workspace"]["task"]["evidence"][0]["id"] == "E1"
+    assert retriever.calls == [("jdk8", "How do I run code in a thread?", 6)]
+    assert ollama.calls == 1
+
+
+def test_ask_events_uses_nanogpt_provider_stage_and_client(tmp_path: Path):
+    docs_dir = tmp_path / "docs"
+    (docs_dir / "jdk8").mkdir(parents=True, exist_ok=True)
+    settings = Settings(
+        docs_dir=docs_dir,
+        indexes_dir=tmp_path / "indexes",
+        history_db_path=tmp_path / "history.sqlite3",
+        chat_provider="ollama",
+    )
+    retriever = FakeRetriever()
+    ollama = FakeOllamaClient()
+    nanogpt = FakeNanoGPTClient()
+    app = create_app(
+        settings=settings,
+        retriever=retriever,
+        ollama_client=ollama,
+        chat_clients={"nanogpt": nanogpt},
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/ask/events",
+        json={
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "chatProvider": "nanogpt",
+        },
+    )
+
+    assert response.status_code == 200
+    payloads = sse_payloads(response)
+    stage_messages = [payload["message"] for payload in payloads if payload["type"] == "stage"]
+    assert "Asking NanoGPT..." in stage_messages
+    assert payloads[-1]["answer"] == "NanoGPT answer."
+    assert nanogpt.calls == 1
+    assert ollama.calls == 0
+
+
+def test_ask_events_rejects_unknown_chat_provider(tmp_path: Path):
+    client, _, _ = make_client(tmp_path)
+
+    response = client.post(
+        "/api/ask/events",
         json={
             "version": "jdk8",
             "query": "How do I run code in a thread?",

@@ -62,30 +62,29 @@ async function loadChatProviders() {
 if (askForm) {
   askForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    answerBox.textContent = "Searching local documentation...";
+    const selectedProvider = chatProviderSelect ? chatProviderSelect.value : "ollama";
+    answerBox.textContent = "";
     sourcesBox.innerHTML = "";
     taskWorkspaceBox.innerHTML = "";
     const button = askForm.querySelector("button[type='submit']");
     button.disabled = true;
 
     try {
-      const response = await fetch("/api/ask", {
+      const response = await fetch("/api/ask/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           version: versionSelect.value,
           query: queryInput.value,
-          chatProvider: chatProviderSelect ? chatProviderSelect.value : undefined,
+          chatProvider: selectedProvider,
           includeWorkspace: true,
         }),
       });
-      const payload = await response.json();
       if (!response.ok) {
+        const payload = await response.json();
         throw new Error(payload.detail || "Request failed");
       }
-      answerBox.textContent = payload.answer || "No answer returned.";
-      renderSources(payload.sources || []);
-      renderTaskWorkspace(payload.workspace);
+      await readAskEvents(response);
     } catch (error) {
       answerBox.textContent = error.message;
       taskWorkspaceBox.innerHTML = "";
@@ -93,6 +92,74 @@ if (askForm) {
       button.disabled = false;
     }
   });
+}
+
+/**
+ * Read Server-Sent Events from the backend ask endpoint.
+ */
+async function readAskEvents(response) {
+  if (!response.body) {
+    throw new Error("This browser cannot read streaming responses.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const statusMessages = [];
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    buffer = processSseBuffer(buffer, statusMessages);
+    if (done) {
+      processSseBuffer(`${buffer}\n\n`, statusMessages);
+      break;
+    }
+  }
+}
+
+/**
+ * Parse complete SSE frames and return any incomplete trailing buffer.
+ */
+function processSseBuffer(buffer, statusMessages) {
+  let remaining = buffer;
+  let boundary = remaining.indexOf("\n\n");
+  while (boundary !== -1) {
+    const frame = remaining.slice(0, boundary);
+    remaining = remaining.slice(boundary + 2);
+    handleSseFrame(frame, statusMessages);
+    boundary = remaining.indexOf("\n\n");
+  }
+  return remaining;
+}
+
+/**
+ * Handle one SSE frame emitted by /api/ask/events.
+ */
+function handleSseFrame(frame, statusMessages) {
+  const dataLines = frame
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => line.slice(6));
+  if (!dataLines.length) {
+    return;
+  }
+
+  const payload = JSON.parse(dataLines.join("\n"));
+  if (payload.type === "stage") {
+    statusMessages.push(payload.message);
+    answerBox.textContent = statusMessages.join("\n");
+    return;
+  }
+  if (payload.type === "complete") {
+    answerBox.textContent = payload.answer || "No answer returned.";
+    renderSources(payload.sources || []);
+    renderTaskWorkspace(payload.workspace);
+    return;
+  }
+  if (payload.type === "error") {
+    throw new Error(payload.message || "Request failed");
+  }
 }
 
 if (chatProviderSelect) {
