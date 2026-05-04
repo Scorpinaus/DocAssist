@@ -1,9 +1,10 @@
 # DocAssist Java Documentation Agent
 
-DocAssist is a local retrieval-augmented generation (RAG) assistant for asking
+DocAssist is a retrieval-augmented generation (RAG) assistant for asking
 questions against Java documentation stored under `docs/`. It is designed for
-offline-friendly exploration of specific Java versions, with local embeddings,
-local vector storage, and local chat completion through Ollama.
+offline-friendly exploration of specific Java versions, with local embeddings
+and local vector storage. Answer generation uses Ollama by default, or an
+optional OpenAI-compatible chat API when configured.
 
 The first supported corpus is JDK 8 documentation under `docs/jdk8/`.
 
@@ -12,6 +13,7 @@ The first supported corpus is JDK 8 documentation under `docs/jdk8/`.
 - Python FastAPI backend
 - Plain HTML/CSS/JS frontend
 - Ollama local chat and embedding APIs
+- Optional OpenAI-compatible chat completion API
 - ChromaDB local persistent indexes
 - Pytest + FastAPI `TestClient` tests
 
@@ -29,7 +31,7 @@ docs/<version>/ files
   -> Chroma index under indexes/<version>/
   -> Retriever query
   -> prompt construction
-  -> Ollama /api/chat
+  -> configured chat provider
   -> FastAPI response and browser UI
 ```
 
@@ -43,6 +45,8 @@ Important boundaries:
 - `backend/app/retriever.py` embeds user queries and performs vector search.
 - `backend/app/prompts.py` formats retrieved chunks into the chat prompt.
 - `backend/app/ollama_client.py` is the HTTP boundary for Ollama.
+- `backend/app/api_chat_client.py` is the HTTP boundary for optional remote chat APIs.
+- `backend/app/chat_client_factory.py` selects the configured chat provider.
 - `frontend/` contains the static browser UI served by FastAPI.
 
 For more design detail, see `docs/ARCHITECTURE.md`.
@@ -108,6 +112,52 @@ window open while using DocAssist. Press `Ctrl+C` in that window to stop it.
 
 Ollama must already be running with the configured chat and embedding models
 available.
+
+### Optional NanoGPT API Chat
+
+Embeddings always come from Ollama, including during ingestion and retrieval.
+To use NanoGPT for answer generation only, edit:
+
+```text
+data/local_settings.json
+```
+
+Use this shape:
+
+```json
+{
+  "chat_provider": "nanogpt",
+  "api_chat_model": "deepseek/deepseek-v4-flash",
+  "api_chat_base_url": "https://nano-gpt.com/api/v1",
+  "llm_api_key": "your-api-key"
+}
+```
+
+The API key can be added later. Until `llm_api_key` is set, DocAssist will
+report that the key is missing when you ask a question with API chat enabled.
+
+By default, API chat requests stream from:
+
+```text
+https://nano-gpt.com/api/v1/chat/completions
+```
+
+For another OpenAI-compatible provider, set a custom base URL:
+
+```powershell
+$env:DOCASSIST_API_CHAT_BASE_URL="https://provider.example/v1"
+```
+
+To return to fully local answer generation:
+
+```json
+{
+  "chat_provider": "ollama",
+  "api_chat_model": "deepseek/deepseek-v4-flash",
+  "api_chat_base_url": "https://nano-gpt.com/api/v1",
+  "llm_api_key": ""
+}
+```
 
 For development, you can run the server directly:
 

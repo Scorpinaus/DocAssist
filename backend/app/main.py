@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.app.chat_client_factory import create_chat_client
 from backend.app.config import Settings, settings as default_settings
 from backend.app.doc_loader import available_versions
 from backend.app.history_store import HistoryStore
@@ -17,16 +18,18 @@ def create_app(
     settings: Settings = default_settings,
     retriever=None,
     ollama_client=None,
+    chat_client=None,
     history_store=None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
-    Optional retriever and Ollama dependencies make the API easy to test without
-    starting Chroma or Ollama.
+    Optional retriever and model dependencies make the API easy to test without
+    starting Chroma, Ollama, or a remote chat API.
     """
     app = FastAPI(title="DocAssist Java Documentation Agent")
     active_retriever = retriever or Retriever(settings)
     active_ollama = ollama_client or OllamaClient(settings)
+    active_chat = chat_client or ollama_client or create_chat_client(settings)
     active_history = history_store or HistoryStore(settings.history_db_path)
 
     @app.get("/api/health")
@@ -54,7 +57,7 @@ def create_app(
         chunks = active_retriever.retrieve(request.version, request.query, settings.top_k_results)
         workspace = build_answer_workspace(request.version, request.query, chunks)
         messages = build_workspace_messages(workspace)
-        answer = active_ollama.chat(messages)
+        answer = active_chat.chat(messages)
         sources = [
             Source(title=chunk.title, path=chunk.path, snippet=chunk.text[:500], score=chunk.score)
             for chunk in chunks
