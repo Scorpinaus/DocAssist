@@ -3,6 +3,7 @@ const chatProviderSelect = document.querySelector("#chat-provider");
 const askForm = document.querySelector("#ask-form");
 const queryInput = document.querySelector("#query");
 const answerBox = document.querySelector("#answer");
+const progressStagesBox = document.querySelector("#progress-stages");
 const sourcesBox = document.querySelector("#sources");
 const taskWorkspaceBox = document.querySelector("#task-workspace");
 const ingestButton = document.querySelector("#ingest");
@@ -64,6 +65,7 @@ if (askForm) {
     event.preventDefault();
     const selectedProvider = chatProviderSelect ? chatProviderSelect.value : "ollama";
     answerBox.textContent = "";
+    resetProgressPanel();
     sourcesBox.innerHTML = "";
     taskWorkspaceBox.innerHTML = "";
     const button = askForm.querySelector("button[type='submit']");
@@ -149,17 +151,150 @@ function handleSseFrame(frame, statusMessages) {
   if (payload.type === "stage") {
     statusMessages.push(payload.message);
     answerBox.textContent = statusMessages.join("\n");
+    updateProgressStage(payload.stage, {
+      status: "Active",
+      message: payload.message,
+      elapsedMs: payload.elapsedMs,
+    });
+    return;
+  }
+  if (payload.type === "stage_complete") {
+    updateProgressStage(payload.stage, {
+      status: "Done",
+      durationMs: payload.durationMs,
+      elapsedMs: payload.elapsedMs,
+      sources: payload.sources,
+    });
     return;
   }
   if (payload.type === "complete") {
     answerBox.textContent = payload.answer || "No answer returned.";
+    updateProgressTotal(payload.totalMs);
     renderSources(payload.sources || []);
     renderTaskWorkspace(payload.workspace);
     return;
   }
   if (payload.type === "error") {
+    markProgressFailed(payload.message || "Request failed");
     throw new Error(payload.message || "Request failed");
   }
+}
+
+/**
+ * Reset the visible backend progress table before a new question.
+ */
+function resetProgressPanel() {
+  if (!progressStagesBox) {
+    return;
+  }
+
+  progressStagesBox.innerHTML = `
+    <div class="progress-table" role="table" aria-label="Answer progress">
+      <div class="progress-row progress-heading" role="row">
+        <span role="columnheader">Stage</span>
+        <span role="columnheader">Status</span>
+        <span role="columnheader">Duration</span>
+      </div>
+      ${progressStageDefinitions()
+        .map(
+          (stage) => `
+            <div class="progress-row" data-stage="${stage.id}" role="row">
+              <span role="cell">${escapeHtml(stage.label)}</span>
+              <span role="cell" class="progress-status">Pending</span>
+              <span role="cell" class="progress-duration">-</span>
+            </div>
+          `
+        )
+        .join("")}
+      <div class="progress-row progress-total" data-stage="total" role="row">
+        <span role="cell">Total</span>
+        <span role="cell" class="progress-status">Pending</span>
+        <span role="cell" class="progress-duration">-</span>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Update one visible progress stage from backend timing events.
+ */
+function updateProgressStage(stage, details) {
+  if (!progressStagesBox || !stage) {
+    return;
+  }
+
+  const row = progressStagesBox.querySelector(`[data-stage="${stage}"]`);
+  if (!row) {
+    return;
+  }
+
+  row.dataset.status = String(details.status || "").toLowerCase();
+  const statusCell = row.querySelector(".progress-status");
+  const durationCell = row.querySelector(".progress-duration");
+  if (statusCell && details.status) {
+    statusCell.textContent = details.status;
+  }
+  if (durationCell) {
+    if (details.durationMs !== undefined) {
+      const suffix = details.sources !== undefined ? `, ${details.sources} source${details.sources === 1 ? "" : "s"}` : "";
+      durationCell.textContent = `${formatDuration(details.durationMs)}${suffix}`;
+    } else if (details.elapsedMs !== undefined) {
+      durationCell.textContent = `${formatDuration(details.elapsedMs)} elapsed`;
+    }
+  }
+}
+
+/**
+ * Mark the total row once the complete event arrives.
+ */
+function updateProgressTotal(totalMs) {
+  updateProgressStage("total", {
+    status: "Done",
+    durationMs: totalMs,
+  });
+}
+
+/**
+ * Mark the active row as failed when the backend emits an error.
+ */
+function markProgressFailed(message) {
+  if (!progressStagesBox) {
+    return;
+  }
+
+  const activeRow = progressStagesBox.querySelector('[data-status="active"]');
+  const row = activeRow || progressStagesBox.querySelector('[data-stage="total"]');
+  row.dataset.status = "failed";
+  const statusCell = row.querySelector(".progress-status");
+  const durationCell = row.querySelector(".progress-duration");
+  if (statusCell) {
+    statusCell.textContent = "Failed";
+  }
+  if (durationCell) {
+    durationCell.textContent = message;
+  }
+}
+
+/**
+ * Stages displayed in the progress panel.
+ */
+function progressStageDefinitions() {
+  return [
+    { id: "prepare", label: "Preparing question" },
+    { id: "retrieve", label: "Searching local documentation" },
+    { id: "plan", label: "Planning response" },
+    { id: "answer", label: "Generating answer" },
+  ];
+}
+
+/**
+ * Format backend millisecond timings for users.
+ */
+function formatDuration(milliseconds) {
+  if (milliseconds === undefined || milliseconds === null || Number.isNaN(Number(milliseconds))) {
+    return "-";
+  }
+  return `${(Number(milliseconds) / 1000).toFixed(2)}s`;
 }
 
 if (chatProviderSelect) {
@@ -197,6 +332,9 @@ if (resetButton) {
   resetButton.addEventListener("click", () => {
     queryInput.value = "";
     answerBox.textContent = "";
+    if (progressStagesBox) {
+      progressStagesBox.innerHTML = "";
+    }
     sourcesBox.innerHTML = "";
     taskWorkspaceBox.innerHTML = "";
     queryInput.focus();

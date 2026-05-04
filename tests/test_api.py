@@ -180,8 +180,31 @@ def test_ask_events_streams_backend_stages_and_complete_payload(tmp_path: Path):
         "Planning response...",
         "Asking Ollama...",
     ]
+    stage_payloads = [payload for payload in payloads if payload["type"] == "stage"]
+    stage_complete_payloads = [payload for payload in payloads if payload["type"] == "stage_complete"]
+    assert [payload["stage"] for payload in stage_payloads] == [
+        "prepare",
+        "retrieve",
+        "retrieve",
+        "plan",
+        "answer",
+    ]
+    assert [payload["stage"] for payload in stage_complete_payloads] == [
+        "prepare",
+        "retrieve",
+        "plan",
+        "answer",
+    ]
+    assert all(isinstance(payload["elapsedMs"], int | float) for payload in stage_payloads)
+    assert all(payload["elapsedMs"] >= 0 for payload in stage_payloads)
+    assert all(isinstance(payload["durationMs"], int | float) for payload in stage_complete_payloads)
+    assert all(payload["durationMs"] >= 0 for payload in stage_complete_payloads)
+    retrieve_complete = next(payload for payload in stage_complete_payloads if payload["stage"] == "retrieve")
+    assert retrieve_complete["sources"] == 1
     complete = payloads[-1]
     assert complete["type"] == "complete"
+    assert isinstance(complete["totalMs"], int | float)
+    assert complete["totalMs"] >= 0
     assert complete["answer"].startswith("Step 1")
     assert complete["sources"][0]["path"] == "api/java/lang/Runnable.html"
     assert complete["workspace"]["task"]["evidence"][0]["id"] == "E1"

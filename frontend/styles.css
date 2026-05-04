@@ -39,6 +39,7 @@ body {
 .toolbar,
 .ask-panel,
 .answer-panel,
+.progress-panel,
 .sources-panel,
 .workspace-panel,
 .history-panel {
@@ -162,6 +163,57 @@ h3 {
   overflow-x: auto;
   white-space: pre-wrap;
   font: 0.98rem/1.5 Consolas, "Courier New", monospace;
+}
+
+.progress-table {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.progress-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(90px, 0.5fr) minmax(130px, 0.7fr);
+  padding: 10px 12px;
+}
+
+.progress-row + .progress-row {
+  border-top: 1px solid var(--line);
+}
+
+.progress-heading {
+  background: #f7f9fb;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.progress-row[data-status="active"] {
+  background: #eef5fb;
+}
+
+.progress-row[data-status="done"] .progress-status {
+  color: #24743a;
+}
+
+.progress-row[data-status="failed"] {
+  background: var(--gap);
+}
+
+.progress-row[data-status="failed"] .progress-status {
+  color: #9a2d2d;
+}
+
+.progress-status,
+.progress-duration {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.progress-duration {
+  overflow-wrap: anywhere;
 }
 
 .source {
@@ -336,5 +388,9 @@ h3 {
   .panel-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .progress-row {
+    grid-template-columns: 1fr;
   }
 }

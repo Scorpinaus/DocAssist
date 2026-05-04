@@ -1,4 +1,5 @@
 import json
+from time import perf_counter
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -113,23 +114,56 @@ def create_app(
         provider = _selected_chat_provider(request.chatProvider, settings)
 
         def stream_events():
-            try:
-                yield _sse_event({"type": "stage", "message": "Preparing question..."})
-                yield _sse_event({"type": "stage", "message": "Searching local documentation..."})
-                chunks = active_retriever.retrieve(request.version, request.query, settings.top_k_results)
-                yield _sse_event(
+            started_at = perf_counter()
+
+            def elapsed_ms():
+                return round((perf_counter() - started_at) * 1000, 1)
+
+            def stage_event(stage: str, message: str, **extra):
+                return _sse_event(
                     {
                         "type": "stage",
-                        "message": "Source material retrieved.",
-                        "sources": len(chunks),
+                        "stage": stage,
+                        "message": message,
+                        "elapsedMs": elapsed_ms(),
+                        **extra,
                     }
                 )
-                yield _sse_event({"type": "stage", "message": "Planning response..."})
+
+            def stage_complete_event(stage: str, stage_started_at: float, **extra):
+                return _sse_event(
+                    {
+                        "type": "stage_complete",
+                        "stage": stage,
+                        "durationMs": round((perf_counter() - stage_started_at) * 1000, 1),
+                        "elapsedMs": elapsed_ms(),
+                        **extra,
+                    }
+                )
+
+            try:
+                stage_started_at = perf_counter()
+                yield stage_event("prepare", "Preparing question...")
+                yield stage_complete_event("prepare", stage_started_at)
+
+                stage_started_at = perf_counter()
+                yield stage_event("retrieve", "Searching local documentation...")
+                chunks = active_retriever.retrieve(request.version, request.query, settings.top_k_results)
+                yield stage_event("retrieve", "Source material retrieved.", sources=len(chunks))
+                yield stage_complete_event("retrieve", stage_started_at, sources=len(chunks))
+
+                stage_started_at = perf_counter()
+                yield stage_event("plan", "Planning response...")
                 workspace = build_answer_workspace(request.version, request.query, chunks)
                 messages = build_workspace_messages(workspace)
+                yield stage_complete_event("plan", stage_started_at)
+
+                stage_started_at = perf_counter()
                 active_chat = active_chat_clients.get(provider) or create_chat_client(settings, provider)
-                yield _sse_event({"type": "stage", "message": f"Asking {_chat_provider_label(provider)}..."})
+                yield stage_event("answer", f"Asking {_chat_provider_label(provider)}...")
                 answer = active_chat.chat(messages)
+                yield stage_complete_event("answer", stage_started_at)
+
                 sources = [
                     Source(title=chunk.title, path=chunk.path, snippet=chunk.text[:500], score=chunk.score)
                     for chunk in chunks
@@ -147,6 +181,7 @@ def create_app(
                         "answer": answer,
                         "sources": [source.model_dump(mode="json") for source in sources],
                         "workspace": workspace.model_dump(mode="json") if request.includeWorkspace else None,
+                        "totalMs": elapsed_ms(),
                     }
                 )
             except Exception as error:
