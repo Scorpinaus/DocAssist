@@ -4,8 +4,9 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.app.config import Settings, settings as default_settings
 from backend.app.doc_loader import available_versions
+from backend.app.history_store import HistoryStore
 from backend.app.ingest import ingest_version
-from backend.app.models import AskRequest, AskResponse, IngestRequest, IngestResponse, Source, VersionsResponse
+from backend.app.models import AskRequest, AskResponse, HistoryResponse, IngestRequest, IngestResponse, Source, VersionsResponse
 from backend.app.ollama_client import OllamaClient
 from backend.app.prompts import build_workspace_messages
 from backend.app.retriever import Retriever
@@ -16,6 +17,7 @@ def create_app(
     settings: Settings = default_settings,
     retriever=None,
     ollama_client=None,
+    history_store=None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -25,6 +27,7 @@ def create_app(
     app = FastAPI(title="DocAssist Java Documentation Agent")
     active_retriever = retriever or Retriever(settings)
     active_ollama = ollama_client or OllamaClient(settings)
+    active_history = history_store or HistoryStore(settings.history_db_path)
 
     @app.get("/api/health")
     def health():
@@ -52,14 +55,33 @@ def create_app(
         workspace = build_answer_workspace(request.version, request.query, chunks)
         messages = build_workspace_messages(workspace)
         answer = active_ollama.chat(messages)
+        sources = [
+            Source(title=chunk.title, path=chunk.path, snippet=chunk.text[:500], score=chunk.score)
+            for chunk in chunks
+        ]
+        active_history.add(
+            version=request.version,
+            question=request.query,
+            answer=answer,
+            sources=sources,
+            workspace=workspace,
+        )
         return AskResponse(
             answer=answer,
-            sources=[
-                Source(title=chunk.title, path=chunk.path, snippet=chunk.text[:500], score=chunk.score)
-                for chunk in chunks
-            ],
+            sources=sources,
             workspace=workspace if request.includeWorkspace else None,
         )
+
+    @app.get("/api/history", response_model=HistoryResponse)
+    def history():
+        """Return saved question history, newest first."""
+        return HistoryResponse(history=active_history.list(settings.history_limit))
+
+    @app.delete("/api/history")
+    def clear_history():
+        """Delete saved question history."""
+        active_history.clear()
+        return {"status": "ok"}
 
     if settings.frontend_dir.exists():
         app.mount("/static", StaticFiles(directory=settings.frontend_dir), name="static")
@@ -70,7 +92,7 @@ def create_app(
             return FileResponse(settings.frontend_dir / "index.html")
 
         @app.get("/history")
-        def history():
+        def history_page():
             """Serve the saved query history page."""
             return FileResponse(settings.frontend_dir / "history.html")
 

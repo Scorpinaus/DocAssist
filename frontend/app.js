@@ -11,8 +11,6 @@ const historyAnswerBox = document.querySelector("#history-answer");
 const historySourcesBox = document.querySelector("#history-sources");
 const historyTaskWorkspaceBox = document.querySelector("#history-task-workspace");
 const clearHistoryButton = document.querySelector("#clear-history");
-const historyStorageKey = "docassist.queryHistory";
-const historyLimit = 30;
 
 /**
  * Load documentation versions from the API and populate the version selector.
@@ -56,15 +54,6 @@ if (askForm) {
       answerBox.textContent = payload.answer || "No answer returned.";
       renderSources(payload.sources || []);
       renderTaskWorkspace(payload.workspace);
-      saveHistoryItem({
-        id: createHistoryId(),
-        version: versionSelect.value,
-        question: queryInput.value,
-        answer: payload.answer || "",
-        sources: payload.sources || [],
-        workspace: payload.workspace || null,
-        createdAt: new Date().toISOString(),
-      });
     } catch (error) {
       answerBox.textContent = error.message;
       taskWorkspaceBox.innerHTML = "";
@@ -110,13 +99,28 @@ if (resetButton) {
 }
 
 if (historyListBox) {
-  renderHistoryPage();
+  renderHistoryPage().catch((error) => {
+    historyListBox.innerHTML = `<p class="empty-note">${escapeHtml(error.message)}</p>`;
+    renderHistoryDetail(null);
+  });
 }
 
 if (clearHistoryButton) {
-  clearHistoryButton.addEventListener("click", () => {
-    localStorage.removeItem(historyStorageKey);
-    renderHistoryPage();
+  clearHistoryButton.addEventListener("click", async () => {
+    clearHistoryButton.disabled = true;
+    try {
+      const response = await fetch("/api/history", { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload.detail || "Clear history failed");
+      }
+      await renderHistoryPage();
+    } catch (error) {
+      historyListBox.innerHTML = `<p class="empty-note">${escapeHtml(error.message)}</p>`;
+      renderHistoryDetail(null);
+    } finally {
+      clearHistoryButton.disabled = false;
+    }
   });
 }
 
@@ -211,31 +215,16 @@ function renderTaskWorkspace(workspace, target = taskWorkspaceBox) {
 }
 
 /**
- * Persist one successful question and answer for the history page.
- */
-function saveHistoryItem(item) {
-  const history = loadHistory();
-  history.unshift(item);
-  localStorage.setItem(historyStorageKey, JSON.stringify(history.slice(0, historyLimit)));
-}
-
-/**
- * Load saved history entries, ignoring malformed localStorage data.
- */
-function loadHistory() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(historyStorageKey) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-/**
  * Render the saved question history and the selected entry detail.
  */
-function renderHistoryPage(selectedId) {
-  const history = loadHistory();
+async function renderHistoryPage(selectedId) {
+  const response = await fetch("/api/history");
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.detail || "History request failed");
+  }
+
+  const history = Array.isArray(payload.history) ? payload.history : [];
   historyListBox.innerHTML = "";
 
   if (!history.length) {
@@ -279,13 +268,6 @@ function renderHistoryDetail(item) {
   historyAnswerBox.textContent = item.answer || "No answer saved.";
   renderSources(item.sources || [], historySourcesBox);
   renderTaskWorkspace(item.workspace, historyTaskWorkspaceBox);
-}
-
-/**
- * Build a compact history identifier without requiring a server round trip.
- */
-function createHistoryId() {
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 /**

@@ -11,6 +11,7 @@ class Settings:
 
     docs_dir: Path = PROJECT_ROOT / "docs"
     indexes_dir: Path = PROJECT_ROOT / "indexes"
+    history_db_path: Path = PROJECT_ROOT / "data" / "docassist.sqlite3"
     frontend_dir: Path = PROJECT_ROOT / "frontend"
     default_version: str = "jdk8"
     ollama_base_url: str = "http://localhost:11434"
@@ -20,6 +21,7 @@ class Settings:
     chunk_size: int = 1200
     chunk_overlap: int = 200
     batch_size: int = 32
+    history_limit: int = 100
 
 
 settings = Settings()

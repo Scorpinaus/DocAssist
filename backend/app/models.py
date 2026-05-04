@@ -54,6 +54,24 @@ class AskResponse(BaseModel):
     workspace: AnswerWorkspace | None = None
 
 
+class HistoryItem(BaseModel):
+    """Saved question, answer, and evidence returned by the history API."""
+
+    id: str
+    createdAt: str
+    version: str
+    question: str
+    answer: str
+    sources: list[Source]
+    workspace: AnswerWorkspace | None = None
+
+
+class HistoryResponse(BaseModel):
+    """Saved query history, newest item first."""
+
+    history: list[HistoryItem]
+
+
 class VersionsResponse(BaseModel):
     """Available documentation versions and the version selected by default."""
 

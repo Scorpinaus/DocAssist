@@ -34,8 +34,12 @@ class FakeOllamaClient:
 
 def make_client(tmp_path: Path):
     docs_dir = tmp_path / "docs"
-    (docs_dir / "jdk8").mkdir(parents=True)
-    settings = Settings(docs_dir=docs_dir, indexes_dir=tmp_path / "indexes")
+    (docs_dir / "jdk8").mkdir(parents=True, exist_ok=True)
+    settings = Settings(
+        docs_dir=docs_dir,
+        indexes_dir=tmp_path / "indexes",
+        history_db_path=tmp_path / "history.sqlite3",
+    )
     retriever = FakeRetriever()
     ollama = FakeOllamaClient()
     app = create_app(settings=settings, retriever=retriever, ollama_client=ollama)
@@ -88,6 +92,58 @@ def test_ask_can_return_temporary_workspace_when_requested(tmp_path: Path):
     assert workspace["task"]["evidence"][0]["path"] == "api/java/lang/Runnable.html"
 
 
+def test_ask_saves_query_history(tmp_path: Path):
+    client, _, _ = make_client(tmp_path)
+
+    response = client.post(
+        "/api/ask",
+        json={
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "includeWorkspace": True,
+        },
+    )
+    history_response = client.get("/api/history")
+
+    assert response.status_code == 200
+    assert history_response.status_code == 200
+    history = history_response.json()["history"]
+    assert len(history) == 1
+    assert history[0]["version"] == "jdk8"
+    assert history[0]["question"] == "How do I run code in a thread?"
+    assert history[0]["answer"].startswith("Step 1")
+    assert history[0]["sources"][0]["path"] == "api/java/lang/Runnable.html"
+    assert history[0]["workspace"]["task"]["evidence"][0]["id"] == "E1"
+
+
+def test_history_can_be_cleared(tmp_path: Path):
+    client, _, _ = make_client(tmp_path)
+    client.post(
+        "/api/ask",
+        json={"version": "jdk8", "query": "How do I run code in a thread?"},
+    )
+
+    response = client.delete("/api/history")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert client.get("/api/history").json() == {"history": []}
+
+
+def test_history_persists_across_app_instances(tmp_path: Path):
+    client, _, _ = make_client(tmp_path)
+    client.post(
+        "/api/ask",
+        json={"version": "jdk8", "query": "How do I run code in a thread?"},
+    )
+
+    second_client, _, _ = make_client(tmp_path)
+    history = second_client.get("/api/history").json()["history"]
+
+    assert len(history) == 1
+    assert history[0]["question"] == "How do I run code in a thread?"
+
+
 def test_ask_rejects_unknown_version(tmp_path: Path):
     client, _, _ = make_client(tmp_path)
 
@@ -107,7 +163,12 @@ def test_history_page_is_served_when_frontend_exists(tmp_path: Path):
     (frontend_dir / "history.html").write_text("<h1>History</h1>", encoding="utf-8")
     docs_dir = tmp_path / "docs"
     (docs_dir / "jdk8").mkdir(parents=True)
-    settings = Settings(docs_dir=docs_dir, frontend_dir=frontend_dir, indexes_dir=tmp_path / "indexes")
+    settings = Settings(
+        docs_dir=docs_dir,
+        frontend_dir=frontend_dir,
+        indexes_dir=tmp_path / "indexes",
+        history_db_path=tmp_path / "history.sqlite3",
+    )
     app = create_app(settings=settings, retriever=FakeRetriever(), ollama_client=FakeOllamaClient())
     client = TestClient(app)
 
