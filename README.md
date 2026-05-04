@@ -153,4 +153,3 @@ Each version gets its own index under `indexes/`, so answers stay scoped to the 
   model from `backend/app/config.py` has been pulled.
 - If asking a question returns no useful sources, ingest the selected version
   again and verify the source files contain readable HTML, Markdown, or text.
-# DocAssist
