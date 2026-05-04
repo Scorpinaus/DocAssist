@@ -9,6 +9,11 @@
   <body>
     <main class="shell">
       <section class="workspace">
+        <nav class="page-nav" aria-label="Primary">
+          <a href="/">Ask</a>
+          <a href="/history">History</a>
+        </nav>
+
         <div class="toolbar">
           <label for="version">Java version</label>
           <select id="version"></select>
@@ -24,7 +29,10 @@
             placeholder="How do I create a custom annotation?"
             required
           ></textarea>
-          <button type="submit">Ask</button>
+          <div class="button-row">
+            <button type="submit">Ask</button>
+            <button id="reset" class="secondary-button" type="button">Reset</button>
+          </div>
         </form>
 
         <section class="answer-panel" aria-live="polite">

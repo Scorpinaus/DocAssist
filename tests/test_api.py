@@ -98,3 +98,20 @@ def test_ask_rejects_unknown_version(tmp_path: Path):
 
     assert response.status_code == 404
     assert "Documentation version not found" in response.json()["detail"]
+
+
+def test_history_page_is_served_when_frontend_exists(tmp_path: Path):
+    frontend_dir = tmp_path / "frontend"
+    frontend_dir.mkdir()
+    (frontend_dir / "index.html").write_text("<h1>Ask</h1>", encoding="utf-8")
+    (frontend_dir / "history.html").write_text("<h1>History</h1>", encoding="utf-8")
+    docs_dir = tmp_path / "docs"
+    (docs_dir / "jdk8").mkdir(parents=True)
+    settings = Settings(docs_dir=docs_dir, frontend_dir=frontend_dir, indexes_dir=tmp_path / "indexes")
+    app = create_app(settings=settings, retriever=FakeRetriever(), ollama_client=FakeOllamaClient())
+    client = TestClient(app)
+
+    response = client.get("/history")
+
+    assert response.status_code == 200
+    assert "History" in response.text

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DocAssist History</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace">
+        <nav class="page-nav" aria-label="Primary">
+          <a href="/">Ask</a>
+          <a href="/history">History</a>
+        </nav>
+
+        <section class="history-panel">
+          <div class="panel-heading">
+            <h1>History</h1>
+            <button id="clear-history" class="secondary-button" type="button">Clear History</button>
+          </div>
+          <div id="history-list" class="history-list"></div>
+        </section>
+
+        <section class="answer-panel" aria-live="polite">
+          <h2>Answer</h2>
+          <pre id="history-answer"></pre>
+        </section>
+
+        <section class="sources-panel">
+          <h2>Sources</h2>
+          <div id="history-sources"></div>
+        </section>
+
+        <section class="workspace-panel">
+          <h2>Evidence Board</h2>
+          <div id="history-task-workspace"></div>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -69,6 +69,11 @@ def create_app(
             """Serve the static frontend shell when it is present locally."""
             return FileResponse(settings.frontend_dir / "index.html")
 
+        @app.get("/history")
+        def history():
+            """Serve the saved query history page."""
+            return FileResponse(settings.frontend_dir / "history.html")
+
     return app
 
 
