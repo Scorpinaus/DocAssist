@@ -26,10 +26,23 @@ class FakeRetriever:
 class FakeOllamaClient:
     def __init__(self):
         self.prompt = ""
+        self.calls = 0
 
     def chat(self, messages):
+        self.calls += 1
         self.prompt = messages[-1]["content"]
         return "Step 1: Implement Runnable.\nStep 2: Override run()."
+
+
+class FakeNanoGPTClient:
+    def __init__(self):
+        self.prompt = ""
+        self.calls = 0
+
+    def chat(self, messages):
+        self.calls += 1
+        self.prompt = messages[-1]["content"]
+        return "NanoGPT answer."
 
 
 def make_client(tmp_path: Path):
@@ -39,6 +52,7 @@ def make_client(tmp_path: Path):
         docs_dir=docs_dir,
         indexes_dir=tmp_path / "indexes",
         history_db_path=tmp_path / "history.sqlite3",
+        chat_provider="ollama",
     )
     retriever = FakeRetriever()
     ollama = FakeOllamaClient()
@@ -53,6 +67,15 @@ def test_versions_returns_discovered_versions_and_default(tmp_path: Path):
 
     assert response.status_code == 200
     assert response.json() == {"versions": ["jdk8"], "default": "jdk8"}
+
+
+def test_chat_providers_returns_available_providers_and_default(tmp_path: Path):
+    client, _, _ = make_client(tmp_path)
+
+    response = client.get("/api/chat-providers")
+
+    assert response.status_code == 200
+    assert response.json() == {"providers": ["ollama", "nanogpt"], "default": "ollama"}
 
 
 def test_ask_uses_selected_version_and_returns_sources(tmp_path: Path):
@@ -71,6 +94,57 @@ def test_ask_uses_selected_version_and_returns_sources(tmp_path: Path):
     assert retriever.calls == [("jdk8", "How do I run code in a thread?", 6)]
     assert "Target Java version: jdk8" in ollama.prompt
     assert "Temporary task workspace:" in ollama.prompt
+
+
+def test_ask_can_use_nanogpt_provider_for_one_request(tmp_path: Path):
+    docs_dir = tmp_path / "docs"
+    (docs_dir / "jdk8").mkdir(parents=True, exist_ok=True)
+    settings = Settings(
+        docs_dir=docs_dir,
+        indexes_dir=tmp_path / "indexes",
+        history_db_path=tmp_path / "history.sqlite3",
+        chat_provider="ollama",
+    )
+    retriever = FakeRetriever()
+    ollama = FakeOllamaClient()
+    nanogpt = FakeNanoGPTClient()
+    app = create_app(
+        settings=settings,
+        retriever=retriever,
+        ollama_client=ollama,
+        chat_clients={"nanogpt": nanogpt},
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/ask",
+        json={
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "chatProvider": "nanogpt",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["answer"] == "NanoGPT answer."
+    assert nanogpt.calls == 1
+    assert ollama.calls == 0
+
+
+def test_ask_rejects_unknown_chat_provider(tmp_path: Path):
+    client, _, _ = make_client(tmp_path)
+
+    response = client.post(
+        "/api/ask",
+        json={
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "chatProvider": "unknown",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Unsupported chat provider" in response.json()["detail"]
 
 
 def test_ask_can_return_temporary_workspace_when_requested(tmp_path: Path):

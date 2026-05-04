@@ -54,6 +54,7 @@ def test_api_chat_client_sends_openai_compatible_request(tmp_path, monkeypatch):
         chat_provider="api",
         api_chat_base_url="https://example.test/v1",
         api_chat_model="example-model",
+        api_chat_key="",
         api_chat_key_env="DOCASSIST_TEST_API_KEY",
     )
     monkeypatch.setenv("DOCASSIST_TEST_API_KEY", "secret-token")
@@ -116,6 +117,7 @@ def test_api_chat_client_requires_api_key(tmp_path, monkeypatch):
         history_db_path=tmp_path / "history.sqlite3",
         chat_provider="api",
         api_chat_model="example-model",
+        api_chat_key="",
         api_chat_key_env="DOCASSIST_TEST_API_KEY",
     )
     monkeypatch.delenv("DOCASSIST_TEST_API_KEY", raising=False)

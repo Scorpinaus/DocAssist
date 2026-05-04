@@ -15,6 +15,7 @@ class AskRequest(BaseModel):
 
     version: str = Field(min_length=1)
     query: str = Field(min_length=1)
+    chatProvider: str | None = None
     includeWorkspace: bool = False
 
 
@@ -76,6 +77,13 @@ class VersionsResponse(BaseModel):
     """Available documentation versions and the version selected by default."""
 
     versions: list[str]
+    default: str
+
+
+class ChatProvidersResponse(BaseModel):
+    """Available answer-generation providers and the configured default."""
+
+    providers: list[str]
     default: str
 
 

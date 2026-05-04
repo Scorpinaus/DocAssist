@@ -2,16 +2,28 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.chat_client_factory import create_chat_client
+from backend.app.chat_client_factory import create_chat_client, normalize_chat_provider
 from backend.app.config import Settings, settings as default_settings
 from backend.app.doc_loader import available_versions
 from backend.app.history_store import HistoryStore
 from backend.app.ingest import ingest_version
-from backend.app.models import AskRequest, AskResponse, HistoryResponse, IngestRequest, IngestResponse, Source, VersionsResponse
+from backend.app.models import (
+    AskRequest,
+    AskResponse,
+    ChatProvidersResponse,
+    HistoryResponse,
+    IngestRequest,
+    IngestResponse,
+    Source,
+    VersionsResponse,
+)
 from backend.app.ollama_client import OllamaClient
 from backend.app.prompts import build_workspace_messages
 from backend.app.retriever import Retriever
 from backend.app.task_workspace import build_answer_workspace
+
+
+_CHAT_PROVIDERS = ["ollama", "nanogpt"]
 
 
 def create_app(
@@ -19,6 +31,7 @@ def create_app(
     retriever=None,
     ollama_client=None,
     chat_client=None,
+    chat_clients=None,
     history_store=None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
@@ -29,7 +42,13 @@ def create_app(
     app = FastAPI(title="DocAssist Java Documentation Agent")
     active_retriever = retriever or Retriever(settings)
     active_ollama = ollama_client or OllamaClient(settings)
-    active_chat = chat_client or ollama_client or create_chat_client(settings)
+    active_chat_clients = {"ollama": active_ollama}
+    if chat_clients:
+        active_chat_clients.update({normalize_chat_provider(name): client for name, client in chat_clients.items()})
+    if chat_client:
+        active_chat_clients[normalize_chat_provider(settings.chat_provider)] = chat_client
+    elif ollama_client:
+        active_chat_clients[normalize_chat_provider(settings.chat_provider)] = ollama_client
     active_history = history_store or HistoryStore(settings.history_db_path)
 
     @app.get("/api/health")
@@ -44,6 +63,14 @@ def create_app(
         default = settings.default_version if settings.default_version in versions else (versions[0] if versions else "")
         return VersionsResponse(versions=versions, default=default)
 
+    @app.get("/api/chat-providers", response_model=ChatProvidersResponse)
+    def chat_providers():
+        """List answer-generation providers and select the configured default."""
+        default = normalize_chat_provider(settings.chat_provider)
+        if default not in _CHAT_PROVIDERS:
+            default = "ollama"
+        return ChatProvidersResponse(providers=_CHAT_PROVIDERS, default=default)
+
     @app.post("/api/ingest", response_model=IngestResponse)
     def ingest(request: IngestRequest):
         """Rebuild the vector index for a selected documentation version."""
@@ -57,6 +84,8 @@ def create_app(
         chunks = active_retriever.retrieve(request.version, request.query, settings.top_k_results)
         workspace = build_answer_workspace(request.version, request.query, chunks)
         messages = build_workspace_messages(workspace)
+        provider = _selected_chat_provider(request.chatProvider, settings)
+        active_chat = active_chat_clients.get(provider) or create_chat_client(settings, provider)
         answer = active_chat.chat(messages)
         sources = [
             Source(title=chunk.title, path=chunk.path, snippet=chunk.text[:500], score=chunk.score)
@@ -106,6 +135,14 @@ def _ensure_version_exists(settings: Settings, version: str) -> None:
     """Raise a 404 when a request references an unknown docs version."""
     if version not in available_versions(settings.docs_dir):
         raise HTTPException(status_code=404, detail=f"Documentation version not found: {version}")
+
+
+def _selected_chat_provider(requested_provider: str | None, settings: Settings) -> str:
+    """Return a supported provider name for one answer request."""
+    provider = normalize_chat_provider(requested_provider or settings.chat_provider)
+    if provider not in _CHAT_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unsupported chat provider: {requested_provider}")
+    return provider
 
 
 app = create_app()

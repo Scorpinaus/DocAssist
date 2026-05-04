@@ -1,4 +1,5 @@
 const versionSelect = document.querySelector("#version");
+const chatProviderSelect = document.querySelector("#chat-provider");
 const askForm = document.querySelector("#ask-form");
 const queryInput = document.querySelector("#query");
 const answerBox = document.querySelector("#answer");
@@ -13,6 +14,7 @@ const historyTaskWorkspaceBox = document.querySelector("#history-task-workspace"
 const clearHistoryButton = document.querySelector("#clear-history");
 const refreshHistoryButton = document.querySelector("#refresh-history");
 let selectedHistoryId = null;
+const chatProviderStorageKey = "docassist.chatProvider";
 
 /**
  * Load documentation versions from the API and populate the version selector.
@@ -27,6 +29,33 @@ async function loadVersions() {
     option.textContent = version.toUpperCase();
     option.selected = version === payload.default;
     versionSelect.append(option);
+  }
+}
+
+/**
+ * Load available answer providers from the API and populate the provider selector.
+ */
+async function loadChatProviders() {
+  if (!chatProviderSelect) {
+    return;
+  }
+
+  const response = await fetch("/api/chat-providers");
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.detail || "Chat provider request failed");
+  }
+
+  const remembered = localStorage.getItem(chatProviderStorageKey);
+  const providers = Array.isArray(payload.providers) ? payload.providers : [];
+  const selectedProvider = providers.includes(remembered) ? remembered : payload.default;
+  chatProviderSelect.innerHTML = "";
+  for (const provider of providers) {
+    const option = document.createElement("option");
+    option.value = provider;
+    option.textContent = formatChatProvider(provider);
+    option.selected = provider === selectedProvider;
+    chatProviderSelect.append(option);
   }
 }
 
@@ -46,6 +75,7 @@ if (askForm) {
         body: JSON.stringify({
           version: versionSelect.value,
           query: queryInput.value,
+          chatProvider: chatProviderSelect ? chatProviderSelect.value : undefined,
           includeWorkspace: true,
         }),
       });
@@ -62,6 +92,12 @@ if (askForm) {
     } finally {
       button.disabled = false;
     }
+  });
+}
+
+if (chatProviderSelect) {
+  chatProviderSelect.addEventListener("change", () => {
+    localStorage.setItem(chatProviderStorageKey, chatProviderSelect.value);
   });
 }
 
@@ -329,6 +365,19 @@ function formatHistoryDate(value) {
 }
 
 /**
+ * Format provider ids for compact display in the toolbar.
+ */
+function formatChatProvider(provider) {
+  if (provider === "nanogpt") {
+    return "NanoGPT";
+  }
+  if (provider === "ollama") {
+    return "Ollama";
+  }
+  return provider;
+}
+
+/**
  * Render one evidence board item as escaped HTML.
  */
 function renderEvidenceItem(item) {
@@ -360,7 +409,7 @@ function escapeHtml(value) {
 }
 
 if (versionSelect) {
-  loadVersions().catch((error) => {
+  Promise.all([loadVersions(), loadChatProviders()]).catch((error) => {
     answerBox.textContent = error.message;
   });
 }

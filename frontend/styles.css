@@ -54,6 +54,10 @@ body {
   gap: 12px;
 }
 
+.toolbar-field {
+  min-width: 180px;
+}
+
 .page-nav {
   display: flex;
   gap: 10px;
