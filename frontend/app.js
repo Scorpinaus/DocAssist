@@ -11,6 +11,8 @@ const historyAnswerBox = document.querySelector("#history-answer");
 const historySourcesBox = document.querySelector("#history-sources");
 const historyTaskWorkspaceBox = document.querySelector("#history-task-workspace");
 const clearHistoryButton = document.querySelector("#clear-history");
+const refreshHistoryButton = document.querySelector("#refresh-history");
+let selectedHistoryId = null;
 
 /**
  * Load documentation versions from the API and populate the version selector.
@@ -105,6 +107,12 @@ if (historyListBox) {
   });
 }
 
+if (refreshHistoryButton) {
+  refreshHistoryButton.addEventListener("click", async () => {
+    await refreshHistory();
+  });
+}
+
 if (clearHistoryButton) {
   clearHistoryButton.addEventListener("click", async () => {
     clearHistoryButton.disabled = true;
@@ -120,6 +128,17 @@ if (clearHistoryButton) {
       renderHistoryDetail(null);
     } finally {
       clearHistoryButton.disabled = false;
+    }
+  });
+}
+
+if (historyListBox) {
+  window.addEventListener("focus", () => {
+    refreshHistory();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      refreshHistory();
     }
   });
 }
@@ -218,6 +237,7 @@ function renderTaskWorkspace(workspace, target = taskWorkspaceBox) {
  * Render the saved question history and the selected entry detail.
  */
 async function renderHistoryPage(selectedId) {
+  selectedHistoryId = selectedId || selectedHistoryId;
   const response = await fetch("/api/history");
   const payload = await response.json();
   if (!response.ok) {
@@ -229,11 +249,13 @@ async function renderHistoryPage(selectedId) {
 
   if (!history.length) {
     historyListBox.innerHTML = `<p class="empty-note">No saved queries yet.</p>`;
+    selectedHistoryId = null;
     renderHistoryDetail(null);
     return;
   }
 
-  const selected = history.find((item) => item.id === selectedId) || history[0];
+  const selected = history.find((item) => item.id === selectedHistoryId) || history[0];
+  selectedHistoryId = selected.id;
   for (const item of history) {
     const button = document.createElement("button");
     button.className = item.id === selected.id ? "history-item active" : "history-item";
@@ -248,6 +270,30 @@ async function renderHistoryPage(selectedId) {
   }
 
   renderHistoryDetail(selected);
+}
+
+/**
+ * Reload history without throwing into event handlers.
+ */
+async function refreshHistory() {
+  if (!historyListBox) {
+    return;
+  }
+
+  if (refreshHistoryButton) {
+    refreshHistoryButton.disabled = true;
+  }
+
+  try {
+    await renderHistoryPage();
+  } catch (error) {
+    historyListBox.innerHTML = `<p class="empty-note">${escapeHtml(error.message)}</p>`;
+    renderHistoryDetail(null);
+  } finally {
+    if (refreshHistoryButton) {
+      refreshHistoryButton.disabled = false;
+    }
+  }
 }
 
 /**
