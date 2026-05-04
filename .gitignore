@@ -28,6 +28,8 @@ docs/*
 !docs/jdk8/
 docs/jdk8/*
 !docs/jdk8/.gitkeep
+data/*
+!data/.gitkeep
 
 # Environment and local config
 .env
