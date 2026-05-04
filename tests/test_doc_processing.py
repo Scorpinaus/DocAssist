@@ -1,4 +1,5 @@
 from pathlib import Path
+from zipfile import ZipFile
 
 from backend.app.chunker import chunk_document
 from backend.app.doc_loader import load_documents
@@ -29,6 +30,56 @@ def test_load_documents_extracts_title_and_visible_text(tmp_path: Path):
     assert "An ordered collection" in documents[0].text
     assert "ignored()" not in documents[0].text
     assert documents[0].source_path.endswith("api/java/util/List.html")
+
+
+def test_load_documents_extracts_supported_files_from_jar(tmp_path: Path):
+    docs_dir = tmp_path / "docs" / "jdk8"
+    docs_dir.mkdir(parents=True)
+    jar_path = docs_dir / "jdk8-docs.jar"
+    with ZipFile(jar_path, "w") as archive:
+        archive.writestr(
+            "api/java/util/Map.html",
+            """
+            <html>
+              <head><title>Map (Java Platform SE 8)</title><script>ignored()</script></head>
+              <body>
+                <h1>Interface Map&lt;K,V&gt;</h1>
+                <p>An object that maps keys to values.</p>
+              </body>
+            </html>
+            """,
+        )
+        archive.writestr("api/java/util/Map.class", "not documentation")
+        archive.writestr("resources/logo.png", b"not documentation")
+
+    documents = load_documents(tmp_path / "docs", "jdk8")
+
+    assert len(documents) == 1
+    assert documents[0].title == "Map (Java Platform SE 8)"
+    assert "An object that maps keys to values" in documents[0].text
+    assert "ignored()" not in documents[0].text
+    assert documents[0].source_path == "jdk8-docs.jar!/api/java/util/Map.html"
+
+
+def test_load_documents_combines_expanded_files_and_jar_files(tmp_path: Path):
+    docs_dir = tmp_path / "docs" / "jdk8"
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "overview.md").write_text(
+        "JDK overview documentation contains enough prose to be indexed.",
+        encoding="utf-8",
+    )
+    with ZipFile(docs_dir / "references.jar", "w") as archive:
+        archive.writestr(
+            "api/java/lang/String.html",
+            "<html><head><title>String</title></head><body>Strings are constant values in Java programs.</body></html>",
+        )
+
+    documents = load_documents(tmp_path / "docs", "jdk8")
+
+    assert [document.source_path for document in documents] == [
+        "overview.md",
+        "references.jar!/api/java/lang/String.html",
+    ]
 
 
 def test_chunk_document_preserves_metadata_and_overlap():

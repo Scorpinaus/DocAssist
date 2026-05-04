@@ -67,6 +67,14 @@ Put JDK 8 documentation files under:
 docs/jdk8/
 ```
 
+Documentation can be either expanded files and folders or Java documentation
+archives. For example, both of these are supported:
+
+```text
+docs/jdk8/api/java/util/List.html
+docs/jdk8/jdk8-docs.jar
+```
+
 ## Ingest
 
 ```powershell
@@ -139,7 +147,8 @@ Each version gets its own index under `indexes/`, so answers stay scoped to the 
 ## Generated And Local Artifacts
 
 - `docs/<version>/` contains local documentation corpora. Large downloaded docs
-  are project data, not application source code.
+  are project data, not application source code. The loader supports expanded
+  HTML, Markdown, and text files, plus documentation packaged as `.jar` files.
 - `indexes/<version>/` contains generated Chroma indexes and can be rebuilt by
   running ingestion again.
 - `.venv/`, `__pycache__/`, pytest cache folders, and temporary test folders are
