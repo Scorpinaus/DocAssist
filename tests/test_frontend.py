@@ -28,3 +28,11 @@ def test_app_js_sends_ingest_and_ask_versions_separately():
     assert "version: ingestVersionSelect.value" in script
     assert "version: askVersionSelect.value" in script
     assert "stepId: payload.stepId" in script
+
+
+def test_step_retrieval_progress_reuses_step_row():
+    script = (PROJECT_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+
+    assert "function progressRowKey(stage, details)" in script
+    assert 'stage === "step_retrieve" ? "step" : stage' in script
+    assert "const rowKey = progressRowKey(stage, details);" in script

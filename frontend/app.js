@@ -301,7 +301,7 @@ function progressStageDefinitions() {
  * Find a progress row, adding dynamic per-step rows as needed.
  */
 function findOrCreateProgressRow(stage, details) {
-  const rowKey = details && details.stepId ? `${stage}-${details.stepId}` : stage;
+  const rowKey = progressRowKey(stage, details);
   let row = progressStagesBox.querySelector(`[data-stage="${rowKey}"]`);
   if (row) {
     return row;
@@ -323,6 +323,18 @@ function findOrCreateProgressRow(stage, details) {
   `;
   totalRow.before(row);
   return row;
+}
+
+/**
+ * Return the stable visible row key for a backend progress event.
+ */
+function progressRowKey(stage, details) {
+  if (!details || !details.stepId) {
+    return stage;
+  }
+
+  const visibleStage = stage === "step_retrieve" ? "step" : stage;
+  return `${visibleStage}-${details.stepId}`;
 }
 
 /**
