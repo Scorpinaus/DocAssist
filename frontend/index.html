@@ -40,6 +40,58 @@
               <label for="chat-provider">Answer model</label>
               <select id="chat-provider"></select>
             </div>
+            <button
+              id="advanced-options-toggle"
+              class="secondary-button advanced-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="advanced-options"
+            >
+              Advanced
+            </button>
+          </div>
+          <div id="advanced-options" class="advanced-controls" hidden>
+            <div class="toolbar-field compact-field">
+              <label for="temperature">Temperature</label>
+              <input id="temperature" type="number" min="0" max="2" step="0.05" value="0.2" />
+            </div>
+            <div class="toolbar-field compact-field">
+              <label for="top-p">Top P</label>
+              <input id="top-p" type="number" min="0" max="1" step="0.05" />
+            </div>
+            <div class="toolbar-field compact-field">
+              <label for="max-tokens">Max tokens</label>
+              <input id="max-tokens" type="number" min="1" max="32768" step="1" />
+            </div>
+            <div class="toolbar-field compact-field">
+              <label for="frequency-penalty">Frequency penalty</label>
+              <input id="frequency-penalty" type="number" min="-2" max="2" step="0.1" />
+            </div>
+            <div class="toolbar-field compact-field">
+              <label for="presence-penalty">Presence penalty</label>
+              <input id="presence-penalty" type="number" min="-2" max="2" step="0.1" />
+            </div>
+            <div class="toolbar-field compact-field">
+              <label for="reasoning-effort">Reasoning</label>
+              <select id="reasoning-effort">
+                <option value="">Default</option>
+                <option value="none">None</option>
+                <option value="minimal">Minimal</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">XHigh</option>
+              </select>
+            </div>
+            <div class="toolbar-field compact-field">
+              <label for="context-window">Context window</label>
+              <input id="context-window" type="number" min="512" max="262144" step="512" />
+            </div>
+            <div class="toolbar-field compact-field">
+              <label for="top-k-results">Retrieved chunks</label>
+              <input id="top-k-results" type="number" min="1" max="20" step="1" value="6" />
+            </div>
+            <button id="reset-options" class="secondary-button" type="button">Defaults</button>
           </div>
           <label for="query">Question</label>
           <textarea
@@ -62,7 +114,7 @@
 
         <section class="answer-panel" aria-live="polite">
           <h1>Answer</h1>
-          <pre id="answer"></pre>
+          <div id="answer" class="answer-content"></div>
         </section>
 
         <section class="sources-panel">

@@ -20,6 +20,20 @@ def _setting(name: str, default: str = "") -> str:
     return os.getenv(f"DOCASSIST_{name.upper()}", default)
 
 
+def _optional_float_setting(name: str) -> float | None:
+    value = _setting(name, "")
+    return float(value) if value != "" else None
+
+
+def _optional_int_setting(name: str) -> int | None:
+    value = _setting(name, "")
+    return int(value) if value != "" else None
+
+
+def _int_setting(name: str, default: int) -> int:
+    return int(_setting(name, str(default)))
+
+
 @dataclass(frozen=True)
 class Settings:
     """Runtime configuration for local documents, indexes, and model providers."""
@@ -38,11 +52,18 @@ class Settings:
     api_chat_model: str = field(default_factory=lambda: _setting("api_chat_model", "deepseek/deepseek-v4-flash"))
     api_chat_key: str = field(default_factory=lambda: _setting("llm_api_key", ""), repr=False)
     api_chat_key_env: str = field(default_factory=lambda: _setting("api_chat_key_env", "DOCASSIST_LLM_API_KEY"))
-    top_k_results: int = 6
+    top_k_results: int = field(default_factory=lambda: _int_setting("top_k_results", 6))
     chunk_size: int = 1200
     chunk_overlap: int = 200
     batch_size: int = 32
     history_limit: int = 100
+    generation_temperature: float | None = field(default_factory=lambda: _optional_float_setting("generation_temperature"))
+    generation_top_p: float | None = field(default_factory=lambda: _optional_float_setting("generation_top_p"))
+    generation_max_tokens: int | None = field(default_factory=lambda: _optional_int_setting("generation_max_tokens"))
+    generation_frequency_penalty: float | None = field(default_factory=lambda: _optional_float_setting("generation_frequency_penalty"))
+    generation_presence_penalty: float | None = field(default_factory=lambda: _optional_float_setting("generation_presence_penalty"))
+    generation_reasoning_effort: str = field(default_factory=lambda: _setting("generation_reasoning_effort", ""))
+    generation_context_window: int | None = field(default_factory=lambda: _optional_int_setting("generation_context_window"))
 
 
 settings = Settings()

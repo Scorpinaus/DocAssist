@@ -76,10 +76,11 @@ def finish_query(
     step_runs: list[StepRun],
     chat_client,
     planner_mode: str = "deterministic",
+    options=None,
 ) -> QueryWorkflowResult:
     """Synthesize the final answer from completed step runs."""
     synthesis = prepare_synthesis(version, query, step_runs, planner_mode=planner_mode)
-    answer = chat_client.chat(synthesis.messages)
+    answer = chat_client.chat(synthesis.messages, options=options)
     return QueryWorkflowResult(
         answer=answer,
         sources=synthesis.sources,
@@ -106,11 +107,12 @@ def prepare_synthesis(
     return QuerySynthesis(sources=sources, workspace=workspace, messages=messages)
 
 
-def answer_query(settings, version: str, query: str, retriever, chat_client) -> QueryWorkflowResult:
+def answer_query(settings, version: str, query: str, retriever, chat_client, options=None) -> QueryWorkflowResult:
     """Run the full deterministic multi-step query workflow."""
     plan = plan_query(settings, version, query, chat_client)
-    step_runs = [run_step(retriever, version, step, settings.top_k_results) for step in plan.steps]
-    return finish_query(version, query, step_runs, chat_client, planner_mode=plan.planner_mode)
+    top_k_results = getattr(options, "top_k_results", None) or settings.top_k_results
+    step_runs = [run_step(retriever, version, step, top_k_results) for step in plan.steps]
+    return finish_query(version, query, step_runs, chat_client, planner_mode=plan.planner_mode, options=options)
 
 
 def _step_result(status: str, evidence_count: int) -> str:

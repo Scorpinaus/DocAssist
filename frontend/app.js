@@ -1,6 +1,17 @@
 const ingestVersionSelect = document.querySelector("#ingest-version");
 const askVersionSelect = document.querySelector("#ask-version");
 const chatProviderSelect = document.querySelector("#chat-provider");
+const temperatureInput = document.querySelector("#temperature");
+const topPInput = document.querySelector("#top-p");
+const maxTokensInput = document.querySelector("#max-tokens");
+const frequencyPenaltyInput = document.querySelector("#frequency-penalty");
+const presencePenaltyInput = document.querySelector("#presence-penalty");
+const reasoningEffortSelect = document.querySelector("#reasoning-effort");
+const contextWindowInput = document.querySelector("#context-window");
+const topKResultsInput = document.querySelector("#top-k-results");
+const resetOptionsButton = document.querySelector("#reset-options");
+const advancedOptionsToggle = document.querySelector("#advanced-options-toggle");
+const advancedOptionsPanel = document.querySelector("#advanced-options");
 const askForm = document.querySelector("#ask-form");
 const queryInput = document.querySelector("#query");
 const answerBox = document.querySelector("#answer");
@@ -17,6 +28,17 @@ const clearHistoryButton = document.querySelector("#clear-history");
 const refreshHistoryButton = document.querySelector("#refresh-history");
 let selectedHistoryId = null;
 const chatProviderStorageKey = "docassist.chatProvider";
+const askOptionsStorageKey = "docassist.askOptions";
+const defaultAskOptions = {
+  temperature: 0.2,
+  topP: null,
+  maxTokens: null,
+  frequencyPenalty: null,
+  presencePenalty: null,
+  reasoningEffort: null,
+  contextWindow: null,
+  topKResults: 6,
+};
 
 /**
  * Load documentation versions from the API and populate the version selector.
@@ -70,7 +92,7 @@ if (askForm) {
   askForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const selectedProvider = chatProviderSelect ? chatProviderSelect.value : "ollama";
-    answerBox.textContent = "";
+    renderPlainAnswerText("");
     resetProgressPanel();
     sourcesBox.innerHTML = "";
     taskWorkspaceBox.innerHTML = "";
@@ -86,6 +108,7 @@ if (askForm) {
           query: queryInput.value,
           chatProvider: selectedProvider,
           includeWorkspace: true,
+          options: readAskOptions(),
         }),
       });
       if (!response.ok) {
@@ -94,7 +117,7 @@ if (askForm) {
       }
       await readAskEvents(response);
     } catch (error) {
-      answerBox.textContent = error.message;
+      renderPlainAnswerText(error.message);
       taskWorkspaceBox.innerHTML = "";
     } finally {
       button.disabled = false;
@@ -156,7 +179,7 @@ function handleSseFrame(frame, statusMessages) {
   const payload = JSON.parse(dataLines.join("\n"));
   if (payload.type === "stage") {
     statusMessages.push(payload.message);
-    answerBox.textContent = statusMessages.join("\n");
+    renderPlainAnswerText(statusMessages.join("\n"));
     updateProgressStage(payload.stage, {
       status: "Active",
       message: payload.message,
@@ -178,7 +201,7 @@ function handleSseFrame(frame, statusMessages) {
     return;
   }
   if (payload.type === "complete") {
-    answerBox.textContent = payload.answer || "No answer returned.";
+    renderAnswer(payload.answer || "No answer returned.");
     updateProgressTotal(payload.totalMs);
     renderSources(payload.sources || []);
     renderTaskWorkspace(payload.workspace);
@@ -353,9 +376,133 @@ if (chatProviderSelect) {
   });
 }
 
+for (const input of [
+  temperatureInput,
+  topPInput,
+  maxTokensInput,
+  frequencyPenaltyInput,
+  presencePenaltyInput,
+  reasoningEffortSelect,
+  contextWindowInput,
+  topKResultsInput,
+]) {
+  if (input) {
+    input.addEventListener("change", saveAskOptions);
+  }
+}
+
+if (resetOptionsButton) {
+  resetOptionsButton.addEventListener("click", () => {
+    applyAskOptions(defaultAskOptions);
+    saveAskOptions();
+  });
+}
+
+if (advancedOptionsToggle && advancedOptionsPanel) {
+  advancedOptionsToggle.addEventListener("click", () => {
+    const isExpanded = advancedOptionsToggle.getAttribute("aria-expanded") === "true";
+    advancedOptionsToggle.setAttribute("aria-expanded", String(!isExpanded));
+    advancedOptionsToggle.textContent = isExpanded ? "Advanced" : "Hide advanced";
+    advancedOptionsPanel.hidden = isExpanded;
+  });
+}
+
+/**
+ * Read generation and retrieval controls from the ask form.
+ */
+function readAskOptions() {
+  return {
+    temperature: readNumberInput(temperatureInput),
+    topP: readNumberInput(topPInput),
+    maxTokens: readIntegerInput(maxTokensInput),
+    frequencyPenalty: readNumberInput(frequencyPenaltyInput),
+    presencePenalty: readNumberInput(presencePenaltyInput),
+    reasoningEffort: readTextInput(reasoningEffortSelect),
+    contextWindow: readIntegerInput(contextWindowInput),
+    topKResults: readIntegerInput(topKResultsInput),
+  };
+}
+
+/**
+ * Persist the current ask option controls in this browser.
+ */
+function saveAskOptions() {
+  localStorage.setItem(askOptionsStorageKey, JSON.stringify(readAskOptions()));
+}
+
+/**
+ * Load saved option controls once the page initializes.
+ */
+function loadAskOptions() {
+  if (!temperatureInput) {
+    return;
+  }
+
+  let remembered = {};
+  try {
+    remembered = JSON.parse(localStorage.getItem(askOptionsStorageKey) || "{}");
+  } catch {
+    remembered = {};
+  }
+  applyAskOptions({ ...defaultAskOptions, ...remembered });
+}
+
+/**
+ * Apply an option object to the ask form controls.
+ */
+function applyAskOptions(options) {
+  writeInputValue(temperatureInput, options.temperature);
+  writeInputValue(topPInput, options.topP);
+  writeInputValue(maxTokensInput, options.maxTokens);
+  writeInputValue(frequencyPenaltyInput, options.frequencyPenalty);
+  writeInputValue(presencePenaltyInput, options.presencePenalty);
+  writeInputValue(reasoningEffortSelect, options.reasoningEffort);
+  writeInputValue(contextWindowInput, options.contextWindow);
+  writeInputValue(topKResultsInput, options.topKResults);
+}
+
+/**
+ * Read a decimal input, preserving blanks as null.
+ */
+function readNumberInput(input) {
+  if (!input || input.value === "") {
+    return null;
+  }
+  const value = Number(input.value);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Read an integer input, preserving blanks as null.
+ */
+function readIntegerInput(input) {
+  const value = readNumberInput(input);
+  return value === null ? null : Math.trunc(value);
+}
+
+/**
+ * Read a text/select input, preserving blanks as null.
+ */
+function readTextInput(input) {
+  if (!input || input.value === "") {
+    return null;
+  }
+  return input.value;
+}
+
+/**
+ * Write a control value while keeping null values blank.
+ */
+function writeInputValue(input, value) {
+  if (!input) {
+    return;
+  }
+  input.value = value === null || value === undefined ? "" : String(value);
+}
+
 if (ingestButton) {
   ingestButton.addEventListener("click", async () => {
-    answerBox.textContent = "Ingesting documentation. This can take a while for full JDK docs...";
+    renderPlainAnswerText("Ingesting documentation. This can take a while for full JDK docs...");
     sourcesBox.innerHTML = "";
     taskWorkspaceBox.innerHTML = "";
     ingestButton.disabled = true;
@@ -369,9 +516,9 @@ if (ingestButton) {
       if (!response.ok) {
         throw new Error(payload.detail || "Ingest failed");
       }
-      answerBox.textContent = `Ingested ${payload.documents} documents into ${payload.chunks} chunks.`;
+      renderPlainAnswerText(`Ingested ${payload.documents} documents into ${payload.chunks} chunks.`);
     } catch (error) {
-      answerBox.textContent = error.message;
+      renderPlainAnswerText(error.message);
     } finally {
       ingestButton.disabled = false;
     }
@@ -381,7 +528,7 @@ if (ingestButton) {
 if (resetButton) {
   resetButton.addEventListener("click", () => {
     queryInput.value = "";
-    answerBox.textContent = "";
+    renderPlainAnswerText("");
     if (progressStagesBox) {
       progressStagesBox.innerHTML = "";
     }
@@ -600,13 +747,13 @@ function renderHistoryDetail(item) {
   }
 
   if (!item) {
-    historyAnswerBox.textContent = "";
+    renderPlainAnswerText("", historyAnswerBox);
     historySourcesBox.innerHTML = "";
     historyTaskWorkspaceBox.innerHTML = "";
     return;
   }
 
-  historyAnswerBox.textContent = item.answer || "No answer saved.";
+  renderAnswer(item.answer || "No answer saved.", historyAnswerBox);
   renderSources(item.sources || [], historySourcesBox);
   renderTaskWorkspace(item.workspace, historyTaskWorkspaceBox);
 }
@@ -680,6 +827,156 @@ function renderWorkspaceStep(step) {
 }
 
 /**
+ * Render an answer with lightweight Markdown support for common model output.
+ */
+function renderAnswer(markdown, target = answerBox) {
+  if (!target) {
+    return;
+  }
+
+  const parts = splitMarkdownCodeFences(markdown || "");
+  target.innerHTML = parts.map(renderAnswerPart).join("");
+}
+
+/**
+ * Render status and error text without applying Markdown formatting.
+ */
+function renderPlainAnswerText(value, target = answerBox) {
+  if (!target) {
+    return;
+  }
+
+  if (!value) {
+    target.innerHTML = "";
+    return;
+  }
+
+  target.innerHTML = `<p class="answer-status">${escapeHtml(value).replace(/\r?\n/g, "<br>")}</p>`;
+}
+
+/**
+ * Split model output into prose and fenced code blocks.
+ */
+function splitMarkdownCodeFences(markdown) {
+  const parts = [];
+  const fencePattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
+  let cursor = 0;
+  let match = fencePattern.exec(markdown);
+
+  while (match) {
+    if (match.index > cursor) {
+      parts.push({ type: "text", content: markdown.slice(cursor, match.index) });
+    }
+    parts.push({
+      type: "code",
+      language: normalizeCodeLanguage(match[1]),
+      content: match[2].replace(/\r?\n$/, ""),
+    });
+    cursor = fencePattern.lastIndex;
+    match = fencePattern.exec(markdown);
+  }
+
+  if (cursor < markdown.length) {
+    parts.push({ type: "text", content: markdown.slice(cursor) });
+  }
+  return parts.length ? parts : [{ type: "text", content: "" }];
+}
+
+/**
+ * Render one parsed answer segment.
+ */
+function renderAnswerPart(part) {
+  if (part.type === "code") {
+    const languageClass = part.language ? ` class="language-${escapeHtml(part.language)}"` : "";
+    return `<pre class="answer-code"><code${languageClass}>${escapeHtml(part.content)}</code></pre>`;
+  }
+
+  return renderAnswerText(part.content);
+}
+
+/**
+ * Render lightweight Markdown prose blocks around code fences.
+ */
+function renderAnswerText(text) {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let paragraph = [];
+  let list = null;
+
+  const flushParagraph = () => {
+    if (!paragraph.length) {
+      return;
+    }
+    html.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br>")}</p>`);
+    paragraph = [];
+  };
+
+  const flushList = () => {
+    if (!list) {
+      return;
+    }
+    html.push(`<${list.type}>${list.items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</${list.type}>`);
+    list = null;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    const heading = /^(#{1,4})\s+(.+)$/.exec(line);
+    const unordered = /^[-*]\s+(.+)$/.exec(line);
+    const ordered = /^\d+[.)]\s+(.+)$/.exec(line);
+
+    if (!line) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = Math.min(heading[1].length + 1, 4);
+      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+    if (unordered || ordered) {
+      flushParagraph();
+      const type = unordered ? "ul" : "ol";
+      if (!list || list.type !== type) {
+        flushList();
+        list = { type, items: [] };
+      }
+      list.items.push(unordered ? unordered[1] : ordered[1]);
+      continue;
+    }
+
+    flushList();
+    paragraph.push(line);
+  }
+
+  flushParagraph();
+  flushList();
+  return html.join("");
+}
+
+/**
+ * Render a small, safe subset of inline Markdown used in answers.
+ */
+function renderInlineMarkdown(value) {
+  return escapeHtml(value)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
+/**
+ * Keep language hints safe for CSS class names.
+ */
+function normalizeCodeLanguage(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_+#.-]/g, "");
+}
+
+/**
  * Escape text before interpolating it into HTML generated by this page.
  */
 function escapeHtml(value) {
@@ -692,7 +989,8 @@ function escapeHtml(value) {
 }
 
 if (ingestVersionSelect || askVersionSelect) {
+  loadAskOptions();
   Promise.all([loadVersions(), loadChatProviders()]).catch((error) => {
-    answerBox.textContent = error.message;
+    renderPlainAnswerText(error.message);
   });
 }

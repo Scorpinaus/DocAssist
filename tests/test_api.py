@@ -29,10 +29,12 @@ class FakeOllamaClient:
     def __init__(self):
         self.prompt = ""
         self.calls = 0
+        self.options = None
 
-    def chat(self, messages):
+    def chat(self, messages, options=None):
         self.calls += 1
         self.prompt = messages[-1]["content"]
+        self.options = options
         return "Step 1: Implement Runnable.\nStep 2: Override run()."
 
 
@@ -40,10 +42,12 @@ class FakeNanoGPTClient:
     def __init__(self):
         self.prompt = ""
         self.calls = 0
+        self.options = None
 
-    def chat(self, messages):
+    def chat(self, messages, options=None):
         self.calls += 1
         self.prompt = messages[-1]["content"]
+        self.options = options
         return "NanoGPT answer."
 
 
@@ -51,10 +55,12 @@ class FakePlannerAnswerClient:
     def __init__(self, planner_response: str):
         self.planner_response = planner_response
         self.prompts = []
+        self.options = []
 
-    def chat(self, messages):
+    def chat(self, messages, options=None):
         prompt = messages[-1]["content"]
         self.prompts.append(prompt)
+        self.options.append(options)
         if "Return only valid JSON" in prompt:
             return self.planner_response
         return "Model-planned answer."
@@ -66,7 +72,7 @@ class OfflineEmbeddingRetriever:
 
 
 class OfflineEmbeddingClient:
-    def chat(self, messages):
+    def chat(self, messages, options=None):
         return "Unused answer."
 
     def embed(self, inputs):
@@ -170,6 +176,41 @@ def test_ask_can_use_nanogpt_provider_for_one_request(tmp_path: Path):
     assert response.json()["answer"] == "NanoGPT answer."
     assert nanogpt.calls == 1
     assert ollama.calls == 0
+
+
+def test_ask_applies_generation_options_and_retrieval_top_k(tmp_path: Path):
+    client, retriever, ollama = make_client(tmp_path)
+
+    response = client.post(
+        "/api/ask",
+        json={
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "options": {
+                "temperature": 0.35,
+                "topP": 0.9,
+                "maxTokens": 700,
+                "frequencyPenalty": 0.1,
+                "presencePenalty": 0.0,
+                "reasoningEffort": "medium",
+                "contextWindow": 8192,
+                "topKResults": 4,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[2] for call in retriever.calls] == [4, 4, 4]
+    assert ollama.options.model_dump(exclude_none=True, by_alias=True) == {
+        "temperature": 0.35,
+        "topP": 0.9,
+        "maxTokens": 700,
+        "frequencyPenalty": 0.1,
+        "presencePenalty": 0.0,
+        "reasoningEffort": "medium",
+        "contextWindow": 8192,
+        "topKResults": 4,
+    }
 
 
 def test_ask_rejects_unknown_chat_provider(tmp_path: Path):
@@ -332,6 +373,31 @@ def test_ask_events_uses_nanogpt_provider_stage_and_client(tmp_path: Path):
     assert payloads[-1]["answer"] == "NanoGPT answer."
     assert nanogpt.calls == 1
     assert ollama.calls == 0
+
+
+def test_ask_events_applies_generation_options_and_retrieval_top_k(tmp_path: Path):
+    client, retriever, ollama = make_client(tmp_path)
+
+    response = client.post(
+        "/api/ask/events",
+        json={
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "options": {
+                "temperature": 0.1,
+                "contextWindow": 4096,
+                "topKResults": 2,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[2] for call in retriever.calls] == [2, 2, 2]
+    assert ollama.options.model_dump(exclude_none=True, by_alias=True) == {
+        "temperature": 0.1,
+        "contextWindow": 4096,
+        "topKResults": 2,
+    }
 
 
 def test_ask_events_streams_model_planner_metadata(tmp_path: Path):

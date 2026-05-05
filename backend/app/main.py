@@ -15,6 +15,7 @@ from backend.app.models import (
     AskRequest,
     AskResponse,
     ChatProvidersResponse,
+    GenerationOptions,
     HistoryResponse,
     IngestRequest,
     IngestResponse,
@@ -91,8 +92,9 @@ def create_app(
         _ensure_version_exists(settings, request.version)
         provider = _selected_chat_provider(request.chatProvider, settings)
         active_chat = active_chat_clients.get(provider) or create_chat_client(settings, provider)
+        options = _request_generation_options(settings, request.options)
         try:
-            result = answer_query(settings, request.version, request.query, active_retriever, active_chat)
+            result = answer_query(settings, request.version, request.query, active_retriever, active_chat, options=options)
         except Exception as error:
             if is_embedding_connection_error(error):
                 raise HTTPException(status_code=503, detail=friendly_runtime_error(error, settings)) from error
@@ -115,6 +117,7 @@ def create_app(
         """Stream backend progress events while answering a question."""
         _ensure_version_exists(settings, request.version)
         provider = _selected_chat_provider(request.chatProvider, settings)
+        options = _request_generation_options(settings, request.options)
 
         def stream_events():
             started_at = perf_counter()
@@ -169,7 +172,7 @@ def create_app(
                         stepId=step.id,
                         stepTitle=step.title,
                     )
-                    step_run = run_step(active_retriever, request.version, step, settings.top_k_results)
+                    step_run = run_step(active_retriever, request.version, step, options.top_k_results or settings.top_k_results)
                     step_runs.append(step_run)
                     yield stage_event(
                         "step_retrieve",
@@ -197,7 +200,7 @@ def create_app(
 
                 stage_started_at = perf_counter()
                 yield stage_event("answer", f"Asking {_chat_provider_label(provider)}...")
-                answer = active_chat.chat(synthesis.messages)
+                answer = active_chat.chat(synthesis.messages, options=options)
                 yield stage_complete_event("answer", stage_started_at)
                 active_history.add(
                     version=request.version,
@@ -275,6 +278,24 @@ def _chat_provider_label(provider: str) -> str:
     if provider == "ollama":
         return "Ollama"
     return provider
+
+
+def _request_generation_options(settings: Settings, requested: GenerationOptions | None) -> GenerationOptions:
+    """Merge configured defaults with per-request generation options."""
+    defaults = GenerationOptions(
+        temperature=settings.generation_temperature,
+        topP=settings.generation_top_p,
+        maxTokens=settings.generation_max_tokens,
+        frequencyPenalty=settings.generation_frequency_penalty,
+        presencePenalty=settings.generation_presence_penalty,
+        reasoningEffort=settings.generation_reasoning_effort or None,
+        contextWindow=settings.generation_context_window,
+        topKResults=settings.top_k_results,
+    )
+    if requested is None:
+        return defaults
+    updates = requested.model_dump(exclude_none=True)
+    return defaults.model_copy(update=updates)
 
 
 def _sse_event(payload: dict) -> str:

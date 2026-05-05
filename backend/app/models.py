@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Source(BaseModel):
@@ -10,6 +10,21 @@ class Source(BaseModel):
     score: float | None = None
 
 
+class GenerationOptions(BaseModel):
+    """Per-request generation and retrieval controls selected by the user."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    top_p: float | None = Field(default=None, alias="topP", ge=0, le=1)
+    max_tokens: int | None = Field(default=None, alias="maxTokens", ge=1, le=32768)
+    frequency_penalty: float | None = Field(default=None, alias="frequencyPenalty", ge=-2, le=2)
+    presence_penalty: float | None = Field(default=None, alias="presencePenalty", ge=-2, le=2)
+    reasoning_effort: str | None = Field(default=None, alias="reasoningEffort", pattern="^(none|minimal|low|medium|high|xhigh)$")
+    context_window: int | None = Field(default=None, alias="contextWindow", ge=512, le=262144)
+    top_k_results: int | None = Field(default=None, alias="topKResults", ge=1, le=20)
+
+
 class AskRequest(BaseModel):
     """Request body for asking a question against one documentation version."""
 
@@ -17,6 +32,7 @@ class AskRequest(BaseModel):
     query: str = Field(min_length=1)
     chatProvider: str | None = None
     includeWorkspace: bool = False
+    options: GenerationOptions | None = None
 
 
 class EvidenceItem(BaseModel):

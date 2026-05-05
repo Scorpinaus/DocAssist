@@ -81,9 +81,30 @@ body {
 }
 
 .ask-controls {
+  align-items: end;
   display: flex;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.advanced-controls {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  margin-bottom: 14px;
+}
+
+.advanced-controls[hidden] {
+  display: none;
+}
+
+.advanced-toggle {
+  flex: 0 0 auto;
+}
+
+.compact-field {
+  min-width: 0;
 }
 
 .page-nav {
@@ -111,6 +132,7 @@ label {
 }
 
 select,
+input,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -183,13 +205,74 @@ h3 {
   font-size: 0.9rem;
 }
 
-#answer,
-#history-answer {
+.answer-content {
+  color: var(--ink);
+  line-height: 1.58;
   margin: 0;
   min-height: 180px;
+  overflow-wrap: anywhere;
+}
+
+.answer-content > :first-child {
+  margin-top: 0;
+}
+
+.answer-content > :last-child {
+  margin-bottom: 0;
+}
+
+.answer-content p,
+.answer-content ul,
+.answer-content ol,
+.answer-status {
+  margin: 0 0 14px;
+}
+
+.answer-content ul,
+.answer-content ol {
+  padding-left: 24px;
+}
+
+.answer-content li + li {
+  margin-top: 5px;
+}
+
+.answer-content h2,
+.answer-content h3,
+.answer-content h4 {
+  color: var(--ink);
+  font-size: 1rem;
+  margin: 18px 0 8px;
+}
+
+.answer-content code {
+  background: #f1f4f7;
+  border: 1px solid #dce3ea;
+  border-radius: 4px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.92em;
+  padding: 1px 4px;
+}
+
+.answer-code {
+  background: #101820;
+  border: 1px solid #243444;
+  border-radius: 6px;
+  color: #eef5fb;
+  margin: 14px 0;
   overflow-x: auto;
-  white-space: pre-wrap;
-  font: 0.98rem/1.5 Consolas, "Courier New", monospace;
+  padding: 14px;
+}
+
+.answer-code code {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: block;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  padding: 0;
+  white-space: pre;
 }
 
 .progress-table {
@@ -412,10 +495,15 @@ h3 {
 @media (max-width: 700px) {
   .toolbar,
   .ask-controls,
+  .advanced-controls,
   .button-row,
   .panel-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .advanced-controls {
+    display: flex;
   }
 
   .progress-row {

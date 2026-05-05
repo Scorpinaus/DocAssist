@@ -159,6 +159,35 @@ To return to fully local answer generation:
 }
 ```
 
+### Ask Options
+
+The Ask screen includes per-query controls for generation and retrieval:
+
+- `temperature` controls sampling randomness.
+- `top_p` controls nucleus sampling where the selected provider supports it.
+- `max_tokens` caps generated answer length.
+- `frequency_penalty` and `presence_penalty` are sent to OpenAI-compatible providers such as NanoGPT.
+- `reasoning_effort` is sent to reasoning-capable NanoGPT/OpenAI-compatible models.
+- `context_window` maps to Ollama `num_ctx`; NanoGPT's similarly named context-memory setting does not expand the target model context window, so DocAssist does not send it for NanoGPT.
+- `top_k_results` controls how many retrieved documentation chunks each query step uses.
+
+You can set defaults in `data/local_settings.json`:
+
+```json
+{
+  "generation_temperature": 0.2,
+  "generation_top_p": 0.9,
+  "generation_max_tokens": 900,
+  "generation_frequency_penalty": 0.1,
+  "generation_presence_penalty": 0.0,
+  "generation_reasoning_effort": "medium",
+  "generation_context_window": 8192,
+  "top_k_results": 6
+}
+```
+
+Per-query browser selections override these defaults for that request.
+
 ### Optional Model-Assisted Query Planning
 
 DocAssist uses deterministic multi-step retrieval planning by default. To let

@@ -25,17 +25,50 @@ class OllamaClient:
             raise RuntimeError("Ollama embed response did not contain embeddings")
         return embeddings
 
-    def chat(self, messages: list[dict[str, str]]) -> str:
+    def chat(self, messages: list[dict[str, str]], options=None) -> str:
         """Send chat messages to Ollama and return the assistant content."""
+        payload = {
+            "model": self.settings.ollama_chat_model,
+            "messages": messages,
+            "stream": False,
+        }
+        generation_options = _ollama_generation_options(options)
+        if generation_options:
+            payload["options"] = generation_options
         response = requests.post(
             f"{self.base_url}/api/chat",
-            json={
-                "model": self.settings.ollama_chat_model,
-                "messages": messages,
-                "stream": False,
-            },
+            json=payload,
             timeout=180,
         )
         response.raise_for_status()
         payload = response.json()
         return payload.get("message", {}).get("content", "").strip()
+
+
+def _ollama_generation_options(options) -> dict:
+    payload = {}
+    temperature = _option_value(options, "temperature")
+    top_p = _option_value(options, "top_p", "topP")
+    max_tokens = _option_value(options, "max_tokens", "maxTokens")
+    context_window = _option_value(options, "context_window", "contextWindow")
+    if temperature is not None:
+        payload["temperature"] = temperature
+    if top_p is not None:
+        payload["top_p"] = top_p
+    if max_tokens is not None:
+        payload["num_predict"] = max_tokens
+    if context_window is not None:
+        payload["num_ctx"] = context_window
+    return payload
+
+
+def _option_value(options, *names):
+    if options is None:
+        return None
+    for name in names:
+        if isinstance(options, dict):
+            if name in options:
+                return options[name]
+        elif hasattr(options, name):
+            return getattr(options, name)
+    return None
