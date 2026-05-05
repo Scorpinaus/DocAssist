@@ -1,4 +1,5 @@
-const versionSelect = document.querySelector("#version");
+const ingestVersionSelect = document.querySelector("#ingest-version");
+const askVersionSelect = document.querySelector("#ask-version");
 const chatProviderSelect = document.querySelector("#chat-provider");
 const askForm = document.querySelector("#ask-form");
 const queryInput = document.querySelector("#query");
@@ -23,13 +24,18 @@ const chatProviderStorageKey = "docassist.chatProvider";
 async function loadVersions() {
   const response = await fetch("/api/versions");
   const payload = await response.json();
-  versionSelect.innerHTML = "";
+  const selects = [ingestVersionSelect, askVersionSelect].filter(Boolean);
+  for (const select of selects) {
+    select.innerHTML = "";
+  }
   for (const version of payload.versions) {
-    const option = document.createElement("option");
-    option.value = version;
-    option.textContent = version.toUpperCase();
-    option.selected = version === payload.default;
-    versionSelect.append(option);
+    for (const select of selects) {
+      const option = document.createElement("option");
+      option.value = version;
+      option.textContent = version.toUpperCase();
+      option.selected = version === payload.default;
+      select.append(option);
+    }
   }
 }
 
@@ -76,7 +82,7 @@ if (askForm) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          version: versionSelect.value,
+          version: askVersionSelect.value,
           query: queryInput.value,
           chatProvider: selectedProvider,
           includeWorkspace: true,
@@ -155,6 +161,8 @@ function handleSseFrame(frame, statusMessages) {
       status: "Active",
       message: payload.message,
       elapsedMs: payload.elapsedMs,
+      stepId: payload.stepId,
+      stepTitle: payload.stepTitle,
     });
     return;
   }
@@ -164,6 +172,8 @@ function handleSseFrame(frame, statusMessages) {
       durationMs: payload.durationMs,
       elapsedMs: payload.elapsedMs,
       sources: payload.sources,
+      stepId: payload.stepId,
+      stepTitle: payload.stepTitle,
     });
     return;
   }
@@ -223,7 +233,7 @@ function updateProgressStage(stage, details) {
     return;
   }
 
-  const row = progressStagesBox.querySelector(`[data-stage="${stage}"]`);
+  const row = findOrCreateProgressRow(stage, details);
   if (!row) {
     return;
   }
@@ -281,10 +291,38 @@ function markProgressFailed(message) {
 function progressStageDefinitions() {
   return [
     { id: "prepare", label: "Preparing question" },
-    { id: "retrieve", label: "Searching local documentation" },
-    { id: "plan", label: "Planning response" },
+    { id: "plan", label: "Planning retrieval" },
+    { id: "synthesize", label: "Synthesizing answer" },
     { id: "answer", label: "Generating answer" },
   ];
+}
+
+/**
+ * Find a progress row, adding dynamic per-step rows as needed.
+ */
+function findOrCreateProgressRow(stage, details) {
+  const rowKey = details && details.stepId ? `${stage}-${details.stepId}` : stage;
+  let row = progressStagesBox.querySelector(`[data-stage="${rowKey}"]`);
+  if (row) {
+    return row;
+  }
+  if (!details || !details.stepId) {
+    return progressStagesBox.querySelector(`[data-stage="${stage}"]`);
+  }
+
+  const totalRow = progressStagesBox.querySelector('[data-stage="total"]');
+  row = document.createElement("div");
+  row.className = "progress-row";
+  row.dataset.stage = rowKey;
+  row.setAttribute("role", "row");
+  const label = details.stepTitle ? `${details.stepId}: ${details.stepTitle}` : details.stepId;
+  row.innerHTML = `
+    <span role="cell">${escapeHtml(label)}</span>
+    <span role="cell" class="progress-status">Pending</span>
+    <span role="cell" class="progress-duration">-</span>
+  `;
+  totalRow.before(row);
+  return row;
 }
 
 /**
@@ -313,7 +351,7 @@ if (ingestButton) {
       const response = await fetch("/api/ingest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version: versionSelect.value }),
+        body: JSON.stringify({ version: ingestVersionSelect.value }),
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -438,6 +476,10 @@ function renderTaskWorkspace(workspace, target = taskWorkspaceBox) {
         <dt>Intent</dt>
         <dd>${escapeHtml(task.intent || "")}</dd>
       </div>
+      <div>
+        <dt>Planner</dt>
+        <dd>${escapeHtml(task.plannerMode || "deterministic")}</dd>
+      </div>
     </dl>
   `;
   target.append(summary);
@@ -448,7 +490,7 @@ function renderTaskWorkspace(workspace, target = taskWorkspaceBox) {
     plan.innerHTML = `
       <h3>Plan</h3>
       <ol>
-        ${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+        ${steps.map(renderWorkspaceStep).join("")}
       </ol>
     `;
     target.append(plan);
@@ -602,6 +644,30 @@ function renderEvidenceItem(item) {
 }
 
 /**
+ * Render one multi-step workspace entry.
+ */
+function renderWorkspaceStep(step) {
+  if (typeof step === "string") {
+    return `<li>${escapeHtml(step)}</li>`;
+  }
+  const evidence = Array.isArray(step.evidence) ? step.evidence : [];
+  const gaps = Array.isArray(step.gaps) ? step.gaps : [];
+  return `
+    <li>
+      <strong>${escapeHtml(step.id || "")}: ${escapeHtml(step.title || "")}</strong>
+      <p>${escapeHtml(step.result || step.description || "")}</p>
+      <small>${escapeHtml(step.status || "pending")}</small>
+      ${
+        evidence.length
+          ? `<ul>${evidence.map((item) => `<li>${escapeHtml(item.id || "")}: ${escapeHtml(item.path || "")}</li>`).join("")}</ul>`
+          : ""
+      }
+      ${gaps.length ? `<ul>${gaps.map((gap) => `<li>${escapeHtml(gap)}</li>`).join("")}</ul>` : ""}
+    </li>
+  `;
+}
+
+/**
  * Escape text before interpolating it into HTML generated by this page.
  */
 function escapeHtml(value) {
@@ -613,7 +679,7 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-if (versionSelect) {
+if (ingestVersionSelect || askVersionSelect) {
   Promise.all([loadVersions(), loadChatProviders()]).catch((error) => {
     answerBox.textContent = error.message;
   });

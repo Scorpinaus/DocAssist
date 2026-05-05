@@ -30,13 +30,27 @@ class EvidenceItem(BaseModel):
     relevanceNote: str
 
 
+class QueryStep(BaseModel):
+    """One visible retrieval and synthesis step for a user question."""
+
+    id: str
+    title: str
+    description: str
+    retrievalQuery: str
+    status: str = "pending"
+    evidence: list[EvidenceItem] = Field(default_factory=list)
+    result: str = ""
+    gaps: list[str] = Field(default_factory=list)
+
+
 class RetrievalTaskPlan(BaseModel):
     """Per-request plan for using retrieved evidence to synthesize an answer."""
 
     version: str
     query: str
     intent: str
-    steps: list[str]
+    plannerMode: str = "deterministic"
+    steps: list[QueryStep]
     evidence: list[EvidenceItem]
     gaps: list[str] = Field(default_factory=list)
 

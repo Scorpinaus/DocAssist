@@ -159,6 +159,20 @@ To return to fully local answer generation:
 }
 ```
 
+### Optional Model-Assisted Query Planning
+
+DocAssist uses deterministic multi-step retrieval planning by default. To let
+the configured chat model draft the retrieval steps for each question, set:
+
+```json
+{
+  "query_planner": "model"
+}
+```
+
+If the model planner returns invalid JSON or incomplete steps, DocAssist falls
+back to deterministic planning for that request.
+
 For development, you can run the server directly:
 
 ```powershell

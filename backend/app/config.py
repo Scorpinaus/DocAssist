@@ -33,6 +33,7 @@ class Settings:
     ollama_chat_model: str = "qwen3.5:9b"
     ollama_embed_model: str = "embeddinggemma"
     chat_provider: str = field(default_factory=lambda: _setting("chat_provider", "ollama"))
+    query_planner: str = field(default_factory=lambda: _setting("query_planner", "deterministic"))
     api_chat_base_url: str = field(default_factory=lambda: _setting("api_chat_base_url", ""))
     api_chat_model: str = field(default_factory=lambda: _setting("api_chat_model", "deepseek/deepseek-v4-flash"))
     api_chat_key: str = field(default_factory=lambda: _setting("llm_api_key", ""), repr=False)

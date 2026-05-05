@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.app.chat_client_factory import create_chat_client, normalize_chat_provider
 from backend.app.config import Settings, settings as default_settings
 from backend.app.doc_loader import available_versions
+from backend.app.errors import friendly_runtime_error, is_embedding_connection_error
 from backend.app.history_store import HistoryStore
 from backend.app.ingest import ingest_version
 from backend.app.models import (
@@ -21,9 +22,8 @@ from backend.app.models import (
     VersionsResponse,
 )
 from backend.app.ollama_client import OllamaClient
-from backend.app.prompts import build_workspace_messages
+from backend.app.query_workflow import answer_query, plan_query, prepare_synthesis, run_step
 from backend.app.retriever import Retriever
-from backend.app.task_workspace import build_answer_workspace
 
 
 _CHAT_PROVIDERS = ["ollama", "nanogpt"]
@@ -78,33 +78,36 @@ def create_app(
     def ingest(request: IngestRequest):
         """Rebuild the vector index for a selected documentation version."""
         _ensure_version_exists(settings, request.version)
-        return IngestResponse(**ingest_version(settings, request.version, active_ollama))
+        try:
+            return IngestResponse(**ingest_version(settings, request.version, active_ollama))
+        except Exception as error:
+            if is_embedding_connection_error(error):
+                raise HTTPException(status_code=503, detail=friendly_runtime_error(error, settings)) from error
+            raise
 
     @app.post("/api/ask", response_model=AskResponse, response_model_exclude_none=True)
     def ask(request: AskRequest):
         """Answer a question using retrieved local documentation context."""
         _ensure_version_exists(settings, request.version)
-        chunks = active_retriever.retrieve(request.version, request.query, settings.top_k_results)
-        workspace = build_answer_workspace(request.version, request.query, chunks)
-        messages = build_workspace_messages(workspace)
         provider = _selected_chat_provider(request.chatProvider, settings)
         active_chat = active_chat_clients.get(provider) or create_chat_client(settings, provider)
-        answer = active_chat.chat(messages)
-        sources = [
-            Source(title=chunk.title, path=chunk.path, snippet=chunk.text[:500], score=chunk.score)
-            for chunk in chunks
-        ]
+        try:
+            result = answer_query(settings, request.version, request.query, active_retriever, active_chat)
+        except Exception as error:
+            if is_embedding_connection_error(error):
+                raise HTTPException(status_code=503, detail=friendly_runtime_error(error, settings)) from error
+            raise
         active_history.add(
             version=request.version,
             question=request.query,
-            answer=answer,
-            sources=sources,
-            workspace=workspace,
+            answer=result.answer,
+            sources=result.sources,
+            workspace=result.workspace,
         )
         return AskResponse(
-            answer=answer,
-            sources=sources,
-            workspace=workspace if request.includeWorkspace else None,
+            answer=result.answer,
+            sources=result.sources,
+            workspace=result.workspace if request.includeWorkspace else None,
         )
 
     @app.post("/api/ask/events")
@@ -147,45 +150,73 @@ def create_app(
                 yield stage_complete_event("prepare", stage_started_at)
 
                 stage_started_at = perf_counter()
-                yield stage_event("retrieve", "Searching local documentation...")
-                chunks = active_retriever.retrieve(request.version, request.query, settings.top_k_results)
-                yield stage_event("retrieve", "Source material retrieved.", sources=len(chunks))
-                yield stage_complete_event("retrieve", stage_started_at, sources=len(chunks))
-
-                stage_started_at = perf_counter()
-                yield stage_event("plan", "Planning response...")
-                workspace = build_answer_workspace(request.version, request.query, chunks)
-                messages = build_workspace_messages(workspace)
-                yield stage_complete_event("plan", stage_started_at)
-
-                stage_started_at = perf_counter()
+                yield stage_event("plan", "Planning multi-step retrieval...")
                 active_chat = active_chat_clients.get(provider) or create_chat_client(settings, provider)
-                yield stage_event("answer", f"Asking {_chat_provider_label(provider)}...")
-                answer = active_chat.chat(messages)
-                yield stage_complete_event("answer", stage_started_at)
+                plan = plan_query(settings, request.version, request.query, active_chat)
+                yield stage_complete_event(
+                    "plan",
+                    stage_started_at,
+                    steps=len(plan.steps),
+                    plannerMode=plan.planner_mode,
+                )
 
-                sources = [
-                    Source(title=chunk.title, path=chunk.path, snippet=chunk.text[:500], score=chunk.score)
-                    for chunk in chunks
-                ]
+                step_runs = []
+                for step in plan.steps:
+                    stage_started_at = perf_counter()
+                    yield stage_event(
+                        "step",
+                        f"Running step {step.id}: {step.title}...",
+                        stepId=step.id,
+                        stepTitle=step.title,
+                    )
+                    step_run = run_step(active_retriever, request.version, step, settings.top_k_results)
+                    step_runs.append(step_run)
+                    yield stage_event(
+                        "step_retrieve",
+                        f"Step {step.id} evidence retrieved.",
+                        stepId=step.id,
+                        sources=len(step_run.chunks),
+                    )
+                    yield stage_complete_event(
+                        "step",
+                        stage_started_at,
+                        stepId=step.id,
+                        sources=len(step_run.chunks),
+                        status=step_run.step.status,
+                    )
+
+                stage_started_at = perf_counter()
+                yield stage_event("synthesize", "Synthesizing final answer...")
+                synthesis = prepare_synthesis(
+                    request.version,
+                    request.query,
+                    step_runs,
+                    planner_mode=plan.planner_mode,
+                )
+                yield stage_complete_event("synthesize", stage_started_at)
+
+                stage_started_at = perf_counter()
+                yield stage_event("answer", f"Asking {_chat_provider_label(provider)}...")
+                answer = active_chat.chat(synthesis.messages)
+                yield stage_complete_event("answer", stage_started_at)
                 active_history.add(
                     version=request.version,
                     question=request.query,
                     answer=answer,
-                    sources=sources,
-                    workspace=workspace,
+                    sources=synthesis.sources,
+                    workspace=synthesis.workspace,
                 )
                 yield _sse_event(
                     {
                         "type": "complete",
                         "answer": answer,
-                        "sources": [source.model_dump(mode="json") for source in sources],
-                        "workspace": workspace.model_dump(mode="json") if request.includeWorkspace else None,
+                        "sources": [source.model_dump(mode="json") for source in synthesis.sources],
+                        "workspace": synthesis.workspace.model_dump(mode="json") if request.includeWorkspace else None,
                         "totalMs": elapsed_ms(),
                     }
                 )
             except Exception as error:
-                yield _sse_event({"type": "error", "message": str(error)})
+                yield _sse_event({"type": "error", "message": friendly_runtime_error(error, settings)})
 
         return StreamingResponse(
             stream_events(),

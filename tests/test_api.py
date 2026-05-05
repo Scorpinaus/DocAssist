@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 
 from fastapi.testclient import TestClient
+import requests
 
 from backend.app.config import Settings
 from backend.app.main import create_app
@@ -44,6 +45,32 @@ class FakeNanoGPTClient:
         self.calls += 1
         self.prompt = messages[-1]["content"]
         return "NanoGPT answer."
+
+
+class FakePlannerAnswerClient:
+    def __init__(self, planner_response: str):
+        self.planner_response = planner_response
+        self.prompts = []
+
+    def chat(self, messages):
+        prompt = messages[-1]["content"]
+        self.prompts.append(prompt)
+        if "Return only valid JSON" in prompt:
+            return self.planner_response
+        return "Model-planned answer."
+
+
+class OfflineEmbeddingRetriever:
+    def retrieve(self, version: str, query: str, top_k: int):
+        raise requests.ConnectionError("Connection refused")
+
+
+class OfflineEmbeddingClient:
+    def chat(self, messages):
+        return "Unused answer."
+
+    def embed(self, inputs):
+        raise requests.ConnectionError("Connection refused")
 
 
 def sse_payloads(response):
@@ -100,9 +127,14 @@ def test_ask_uses_selected_version_and_returns_sources(tmp_path: Path):
     assert payload["answer"].startswith("Step 1")
     assert payload["sources"][0]["path"] == "api/java/lang/Runnable.html"
     assert "workspace" not in payload
-    assert retriever.calls == [("jdk8", "How do I run code in a thread?", 6)]
+    assert [call[1] for call in retriever.calls] == [
+        "How do I run code in a thread?",
+        "How do I run code in a thread? API classes methods behavior",
+        "How do I run code in a thread? examples constraints exceptions",
+    ]
     assert "Target Java version: jdk8" in ollama.prompt
     assert "Temporary task workspace:" in ollama.prompt
+    assert "Multi-step task plan:" in ollama.prompt
 
 
 def test_ask_can_use_nanogpt_provider_for_one_request(tmp_path: Path):
@@ -156,6 +188,38 @@ def test_ask_rejects_unknown_chat_provider(tmp_path: Path):
     assert "Unsupported chat provider" in response.json()["detail"]
 
 
+def test_ask_returns_friendly_embedding_error_when_ollama_is_offline(tmp_path: Path):
+    docs_dir = tmp_path / "docs"
+    (docs_dir / "jdk8").mkdir(parents=True, exist_ok=True)
+    settings = Settings(
+        docs_dir=docs_dir,
+        indexes_dir=tmp_path / "indexes",
+        history_db_path=tmp_path / "history.sqlite3",
+        chat_provider="nanogpt",
+    )
+    app = create_app(
+        settings=settings,
+        retriever=OfflineEmbeddingRetriever(),
+        chat_clients={"nanogpt": FakeNanoGPTClient()},
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/ask",
+        json={
+            "version": "jdk8",
+            "query": "How do I filter a list?",
+            "chatProvider": "nanogpt",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "Ollama embeddings are unavailable at http://localhost:11434. "
+        "Start Ollama, make sure the embedding model 'embeddinggemma' is installed, then retry."
+    )
+
+
 def test_ask_events_streams_backend_stages_and_complete_payload(tmp_path: Path):
     client, retriever, ollama = make_client(tmp_path)
 
@@ -175,32 +239,46 @@ def test_ask_events_streams_backend_stages_and_complete_payload(tmp_path: Path):
     stage_messages = [payload["message"] for payload in payloads if payload["type"] == "stage"]
     assert stage_messages == [
         "Preparing question...",
-        "Searching local documentation...",
-        "Source material retrieved.",
-        "Planning response...",
+        "Planning multi-step retrieval...",
+        "Running step S1: Identify the documentation topic...",
+        "Step S1 evidence retrieved.",
+        "Running step S2: Gather API details...",
+        "Step S2 evidence retrieved.",
+        "Running step S3: Check usage constraints and examples...",
+        "Step S3 evidence retrieved.",
+        "Synthesizing final answer...",
         "Asking Ollama...",
     ]
     stage_payloads = [payload for payload in payloads if payload["type"] == "stage"]
     stage_complete_payloads = [payload for payload in payloads if payload["type"] == "stage_complete"]
     assert [payload["stage"] for payload in stage_payloads] == [
         "prepare",
-        "retrieve",
-        "retrieve",
         "plan",
+        "step",
+        "step_retrieve",
+        "step",
+        "step_retrieve",
+        "step",
+        "step_retrieve",
+        "synthesize",
         "answer",
     ]
     assert [payload["stage"] for payload in stage_complete_payloads] == [
         "prepare",
-        "retrieve",
         "plan",
+        "step",
+        "step",
+        "step",
+        "synthesize",
         "answer",
     ]
     assert all(isinstance(payload["elapsedMs"], int | float) for payload in stage_payloads)
     assert all(payload["elapsedMs"] >= 0 for payload in stage_payloads)
     assert all(isinstance(payload["durationMs"], int | float) for payload in stage_complete_payloads)
     assert all(payload["durationMs"] >= 0 for payload in stage_complete_payloads)
-    retrieve_complete = next(payload for payload in stage_complete_payloads if payload["stage"] == "retrieve")
-    assert retrieve_complete["sources"] == 1
+    step_complete_payloads = [payload for payload in stage_complete_payloads if payload["stage"] == "step"]
+    assert [payload["stepId"] for payload in step_complete_payloads] == ["S1", "S2", "S3"]
+    assert all(payload["sources"] == 1 for payload in step_complete_payloads)
     complete = payloads[-1]
     assert complete["type"] == "complete"
     assert isinstance(complete["totalMs"], int | float)
@@ -208,7 +286,13 @@ def test_ask_events_streams_backend_stages_and_complete_payload(tmp_path: Path):
     assert complete["answer"].startswith("Step 1")
     assert complete["sources"][0]["path"] == "api/java/lang/Runnable.html"
     assert complete["workspace"]["task"]["evidence"][0]["id"] == "E1"
-    assert retriever.calls == [("jdk8", "How do I run code in a thread?", 6)]
+    assert [step["id"] for step in complete["workspace"]["task"]["steps"]] == ["S1", "S2", "S3"]
+    assert complete["workspace"]["task"]["steps"][0]["evidence"][0]["id"] == "E1"
+    assert [call[1] for call in retriever.calls] == [
+        "How do I run code in a thread?",
+        "How do I run code in a thread? API classes methods behavior",
+        "How do I run code in a thread? examples constraints exceptions",
+    ]
     assert ollama.calls == 1
 
 
@@ -250,6 +334,52 @@ def test_ask_events_uses_nanogpt_provider_stage_and_client(tmp_path: Path):
     assert ollama.calls == 0
 
 
+def test_ask_events_streams_model_planner_metadata(tmp_path: Path):
+    docs_dir = tmp_path / "docs"
+    (docs_dir / "jdk8").mkdir(parents=True, exist_ok=True)
+    settings = Settings(
+        docs_dir=docs_dir,
+        indexes_dir=tmp_path / "indexes",
+        history_db_path=tmp_path / "history.sqlite3",
+        chat_provider="ollama",
+        query_planner="model",
+    )
+    retriever = FakeRetriever()
+    client = FakePlannerAnswerClient(
+        """
+        {
+          "steps": [
+            {
+              "title": "Find Runnable",
+              "description": "Look up Runnable documentation.",
+              "retrievalQuery": "Runnable interface"
+            }
+          ]
+        }
+        """
+    )
+    app = create_app(settings=settings, retriever=retriever, ollama_client=client)
+    test_client = TestClient(app)
+
+    response = test_client.post(
+        "/api/ask/events",
+        json={
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "includeWorkspace": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payloads = sse_payloads(response)
+    plan_complete = next(payload for payload in payloads if payload["type"] == "stage_complete" and payload["stage"] == "plan")
+    complete = payloads[-1]
+    assert plan_complete["plannerMode"] == "model"
+    assert plan_complete["steps"] == 1
+    assert complete["workspace"]["task"]["plannerMode"] == "model"
+    assert complete["workspace"]["task"]["steps"][0]["retrievalQuery"] == "Runnable interface"
+
+
 def test_ask_events_rejects_unknown_chat_provider(tmp_path: Path):
     client, _, _ = make_client(tmp_path)
 
@@ -264,6 +394,42 @@ def test_ask_events_rejects_unknown_chat_provider(tmp_path: Path):
 
     assert response.status_code == 400
     assert "Unsupported chat provider" in response.json()["detail"]
+
+
+def test_ask_events_streams_friendly_embedding_error_when_ollama_is_offline(tmp_path: Path):
+    docs_dir = tmp_path / "docs"
+    (docs_dir / "jdk8").mkdir(parents=True, exist_ok=True)
+    settings = Settings(
+        docs_dir=docs_dir,
+        indexes_dir=tmp_path / "indexes",
+        history_db_path=tmp_path / "history.sqlite3",
+        chat_provider="nanogpt",
+    )
+    app = create_app(
+        settings=settings,
+        retriever=OfflineEmbeddingRetriever(),
+        chat_clients={"nanogpt": FakeNanoGPTClient()},
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/ask/events",
+        json={
+            "version": "jdk8",
+            "query": "How do I filter a list?",
+            "chatProvider": "nanogpt",
+        },
+    )
+
+    assert response.status_code == 200
+    payloads = sse_payloads(response)
+    assert payloads[-1] == {
+        "type": "error",
+        "message": (
+            "Ollama embeddings are unavailable at http://localhost:11434. "
+            "Start Ollama, make sure the embedding model 'embeddinggemma' is installed, then retry."
+        ),
+    }
 
 
 def test_ask_can_return_temporary_workspace_when_requested(tmp_path: Path):
@@ -281,8 +447,62 @@ def test_ask_can_return_temporary_workspace_when_requested(tmp_path: Path):
     assert response.status_code == 200
     workspace = response.json()["workspace"]
     assert workspace["task"]["version"] == "jdk8"
+    assert workspace["task"]["plannerMode"] == "deterministic"
     assert workspace["task"]["evidence"][0]["id"] == "E1"
     assert workspace["task"]["evidence"][0]["path"] == "api/java/lang/Runnable.html"
+
+
+def test_ask_uses_model_planner_when_enabled(tmp_path: Path):
+    docs_dir = tmp_path / "docs"
+    (docs_dir / "jdk8").mkdir(parents=True, exist_ok=True)
+    settings = Settings(
+        docs_dir=docs_dir,
+        indexes_dir=tmp_path / "indexes",
+        history_db_path=tmp_path / "history.sqlite3",
+        chat_provider="ollama",
+        query_planner="model",
+    )
+    retriever = FakeRetriever()
+    client = FakePlannerAnswerClient(
+        """
+        {
+          "steps": [
+            {
+              "title": "Find Runnable",
+              "description": "Look up Runnable documentation.",
+              "retrievalQuery": "Runnable interface"
+            },
+            {
+              "title": "Find Thread start",
+              "description": "Look up Thread start behavior.",
+              "retrievalQuery": "Thread start Runnable"
+            }
+          ]
+        }
+        """
+    )
+    app = create_app(settings=settings, retriever=retriever, ollama_client=client)
+    test_client = TestClient(app)
+
+    response = test_client.post(
+        "/api/ask",
+        json={
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "includeWorkspace": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answer"] == "Model-planned answer."
+    assert payload["workspace"]["task"]["plannerMode"] == "model"
+    assert [step["title"] for step in payload["workspace"]["task"]["steps"]] == [
+        "Find Runnable",
+        "Find Thread start",
+    ]
+    assert [call[1] for call in retriever.calls] == ["Runnable interface", "Thread start Runnable"]
+    assert len(client.prompts) == 2
 
 
 def test_ask_saves_query_history(tmp_path: Path):
@@ -307,6 +527,30 @@ def test_ask_saves_query_history(tmp_path: Path):
     assert history[0]["answer"].startswith("Step 1")
     assert history[0]["sources"][0]["path"] == "api/java/lang/Runnable.html"
     assert history[0]["workspace"]["task"]["evidence"][0]["id"] == "E1"
+
+
+def test_ingest_returns_friendly_embedding_error_when_ollama_is_offline(tmp_path: Path):
+    docs_dir = tmp_path / "docs" / "jdk8"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    (docs_dir / "page.html").write_text(
+        f"<html><head><title>Streams</title></head><body>{'Java streams documentation. ' * 80}</body></html>",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        docs_dir=tmp_path / "docs",
+        indexes_dir=tmp_path / "indexes",
+        history_db_path=tmp_path / "history.sqlite3",
+    )
+    app = create_app(settings=settings, ollama_client=OfflineEmbeddingClient())
+    client = TestClient(app)
+
+    response = client.post("/api/ingest", json={"version": "jdk8"})
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "Ollama embeddings are unavailable at http://localhost:11434. "
+        "Start Ollama, make sure the embedding model 'embeddinggemma' is installed, then retry."
+    )
 
 
 def test_history_can_be_cleared(tmp_path: Path):

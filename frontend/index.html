@@ -14,19 +14,33 @@
           <a href="/history">History</a>
         </nav>
 
-        <div class="toolbar">
-          <div class="toolbar-field">
-            <label for="version">Java version</label>
-            <select id="version"></select>
+        <section id="ingest-panel" class="toolbar" aria-labelledby="ingest-title">
+          <div class="toolbar-copy">
+            <h1 id="ingest-title">Ingest documentation</h1>
+            <p>Build or refresh the local search index for one Java documentation version.</p>
           </div>
           <div class="toolbar-field">
-            <label for="chat-provider">Answer model</label>
-            <select id="chat-provider"></select>
+            <label for="ingest-version">Java version</label>
+            <select id="ingest-version"></select>
+          </div>
+          <div class="toolbar-field">
+            <label>Embedding service</label>
+            <p class="service-note">Ollama embeddings</p>
           </div>
           <button id="ingest" type="button">Ingest</button>
-        </div>
+        </section>
 
         <form id="ask-form" class="ask-panel">
+          <div class="ask-controls">
+            <div class="toolbar-field">
+              <label for="ask-version">Java version</label>
+              <select id="ask-version"></select>
+            </div>
+            <div class="toolbar-field">
+              <label for="chat-provider">Answer model</label>
+              <select id="chat-provider"></select>
+            </div>
+          </div>
           <label for="query">Question</label>
           <textarea
             id="query"

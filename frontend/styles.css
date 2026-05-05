@@ -55,8 +55,35 @@ body {
   gap: 12px;
 }
 
+.toolbar-copy {
+  flex: 1 1 auto;
+  min-width: 260px;
+}
+
+.toolbar-copy h1 {
+  margin-bottom: 6px;
+}
+
+.toolbar-copy p,
+.service-note {
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.service-note {
+  min-height: 40px;
+  padding: 10px 0;
+}
+
 .toolbar-field {
   min-width: 180px;
+}
+
+.ask-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
 .page-nav {
@@ -384,6 +411,7 @@ h3 {
 
 @media (max-width: 700px) {
   .toolbar,
+  .ask-controls,
   .button-row,
   .panel-heading {
     align-items: stretch;
