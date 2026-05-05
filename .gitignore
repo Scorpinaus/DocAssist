@@ -30,6 +30,8 @@ docs/jdk8/*
 !docs/jdk8/.gitkeep
 data/*
 !data/.gitkeep
+memory-bank/
+nanogpt.py
 
 # Environment and local config
 .env
