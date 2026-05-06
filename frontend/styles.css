@@ -36,6 +36,10 @@ body {
   gap: 18px;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 .toolbar,
 .ask-panel,
 .answer-panel,
@@ -105,6 +109,51 @@ body {
 
 .compact-field {
   min-width: 0;
+}
+
+.folder-tabs {
+  align-items: end;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 4px;
+  margin-bottom: -10px;
+  padding-left: 8px;
+}
+
+.folder-tab {
+  background: #e9eef3;
+  border: 1px solid var(--line);
+  border-bottom-color: var(--line);
+  border-radius: 8px 8px 0 0;
+  color: var(--muted);
+  min-height: 40px;
+  padding: 0 22px;
+  position: relative;
+  top: 1px;
+}
+
+.folder-tab:hover {
+  background: #eef3f7;
+  color: var(--accent-dark);
+}
+
+.folder-tab.active,
+.folder-tab[aria-selected="true"] {
+  background: var(--panel);
+  border-bottom-color: var(--panel);
+  color: var(--ink);
+  min-height: 46px;
+  z-index: 1;
+}
+
+.folder-tab:focus-visible {
+  outline: 3px solid #9dc3dd;
+  outline-offset: 2px;
+}
+
+.tab-panel {
+  display: grid;
+  gap: 18px;
 }
 
 .page-nav {
@@ -493,6 +542,17 @@ h3 {
 }
 
 @media (max-width: 700px) {
+  .folder-tabs {
+    margin-bottom: -8px;
+    overflow-x: auto;
+    padding-left: 0;
+  }
+
+  .folder-tab {
+    flex: 1 0 120px;
+    padding: 0 14px;
+  }
+
   .toolbar,
   .ask-controls,
   .advanced-controls,

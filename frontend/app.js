@@ -26,6 +26,7 @@ const historySourcesBox = document.querySelector("#history-sources");
 const historyTaskWorkspaceBox = document.querySelector("#history-task-workspace");
 const clearHistoryButton = document.querySelector("#clear-history");
 const refreshHistoryButton = document.querySelector("#refresh-history");
+const folderTabs = document.querySelectorAll("[data-tab-target]");
 let selectedHistoryId = null;
 const chatProviderStorageKey = "docassist.chatProvider";
 const askOptionsStorageKey = "docassist.askOptions";
@@ -39,6 +40,28 @@ const defaultAskOptions = {
   contextWindow: null,
   topKResults: 6,
 };
+
+function activateFolderTab(targetId) {
+  for (const tab of folderTabs) {
+    const isActive = tab.dataset.tabTarget === targetId;
+    const panel = document.querySelector(`#${tab.dataset.tabTarget}`);
+    tab.classList.toggle("active", isActive);
+    tab.setAttribute("aria-selected", String(isActive));
+    if (panel) {
+      panel.hidden = !isActive;
+      panel.classList.toggle("active", isActive);
+    }
+  }
+}
+
+if (folderTabs.length) {
+  activateFolderTab("query-panel");
+  for (const tab of folderTabs) {
+    tab.addEventListener("click", () => {
+      activateFolderTab(tab.dataset.tabTarget);
+    });
+  }
+}
 
 /**
  * Load documentation versions from the API and populate the version selector.

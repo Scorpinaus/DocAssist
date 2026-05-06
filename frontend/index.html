@@ -14,118 +14,147 @@
           <a href="/history">History</a>
         </nav>
 
-        <section id="ingest-panel" class="toolbar" aria-labelledby="ingest-title">
-          <div class="toolbar-copy">
-            <h1 id="ingest-title">Ingest documentation</h1>
-            <p>Build or refresh the local search index for one Java documentation version.</p>
-          </div>
-          <div class="toolbar-field">
-            <label for="ingest-version">Java version</label>
-            <select id="ingest-version"></select>
-          </div>
-          <div class="toolbar-field">
-            <label>Embedding service</label>
-            <p class="service-note">Ollama embeddings</p>
-          </div>
-          <button id="ingest" type="button">Ingest</button>
-        </section>
+        <div class="folder-tabs" role="tablist" aria-label="Workspace sections">
+          <button
+            id="query-tab"
+            class="folder-tab active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="query-panel"
+            data-tab-target="query-panel"
+          >
+            Query
+          </button>
+          <button
+            id="ingest-tab"
+            class="folder-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="ingest-panel"
+            data-tab-target="ingest-panel"
+          >
+            Ingest
+          </button>
+        </div>
 
-        <form id="ask-form" class="ask-panel">
-          <div class="ask-controls">
+        <div id="query-panel" class="tab-panel active" role="tabpanel" aria-labelledby="query-tab">
+          <form id="ask-form" class="ask-panel">
+            <div class="ask-controls">
+              <div class="toolbar-field">
+                <label for="ask-version">Java version</label>
+                <select id="ask-version"></select>
+              </div>
+              <div class="toolbar-field">
+                <label for="chat-provider">Answer model</label>
+                <select id="chat-provider"></select>
+              </div>
+              <button
+                id="advanced-options-toggle"
+                class="secondary-button advanced-toggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="advanced-options"
+              >
+                Advanced
+              </button>
+            </div>
+            <div id="advanced-options" class="advanced-controls" hidden>
+              <div class="toolbar-field compact-field">
+                <label for="temperature">Temperature</label>
+                <input id="temperature" type="number" min="0" max="2" step="0.05" value="0.2" />
+              </div>
+              <div class="toolbar-field compact-field">
+                <label for="top-p">Top P</label>
+                <input id="top-p" type="number" min="0" max="1" step="0.05" />
+              </div>
+              <div class="toolbar-field compact-field">
+                <label for="max-tokens">Max tokens</label>
+                <input id="max-tokens" type="number" min="1" max="32768" step="1" />
+              </div>
+              <div class="toolbar-field compact-field">
+                <label for="frequency-penalty">Frequency penalty</label>
+                <input id="frequency-penalty" type="number" min="-2" max="2" step="0.1" />
+              </div>
+              <div class="toolbar-field compact-field">
+                <label for="presence-penalty">Presence penalty</label>
+                <input id="presence-penalty" type="number" min="-2" max="2" step="0.1" />
+              </div>
+              <div class="toolbar-field compact-field">
+                <label for="reasoning-effort">Reasoning</label>
+                <select id="reasoning-effort">
+                  <option value="">Default</option>
+                  <option value="none">None</option>
+                  <option value="minimal">Minimal</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="xhigh">XHigh</option>
+                </select>
+              </div>
+              <div class="toolbar-field compact-field">
+                <label for="context-window">Context window</label>
+                <input id="context-window" type="number" min="512" max="262144" step="512" />
+              </div>
+              <div class="toolbar-field compact-field">
+                <label for="top-k-results">Retrieved chunks</label>
+                <input id="top-k-results" type="number" min="1" max="20" step="1" value="6" />
+              </div>
+              <button id="reset-options" class="secondary-button" type="button">Defaults</button>
+            </div>
+            <label for="query">Question</label>
+            <textarea
+              id="query"
+              name="query"
+              rows="4"
+              placeholder="How do I create a custom annotation?"
+              required
+            ></textarea>
+            <div class="button-row">
+              <button type="submit">Ask</button>
+              <button id="reset" class="secondary-button" type="button">Reset</button>
+            </div>
+          </form>
+
+          <section class="progress-panel" aria-live="polite">
+            <h2>Progress</h2>
+            <div id="progress-stages"></div>
+          </section>
+
+          <section class="answer-panel" aria-live="polite">
+            <h1>Answer</h1>
+            <div id="answer" class="answer-content"></div>
+          </section>
+
+          <section class="sources-panel">
+            <h2>Sources</h2>
+            <div id="sources"></div>
+          </section>
+
+          <section class="workspace-panel">
+            <h2>Evidence Board</h2>
+            <div id="task-workspace"></div>
+          </section>
+        </div>
+
+        <div id="ingest-panel" class="tab-panel" role="tabpanel" aria-labelledby="ingest-tab" hidden>
+          <section class="toolbar" aria-labelledby="ingest-title">
+            <div class="toolbar-copy">
+              <h1 id="ingest-title">Ingest documentation</h1>
+              <p>Build or refresh the local search index for one Java documentation version.</p>
+            </div>
             <div class="toolbar-field">
-              <label for="ask-version">Java version</label>
-              <select id="ask-version"></select>
+              <label for="ingest-version">Java version</label>
+              <select id="ingest-version"></select>
             </div>
             <div class="toolbar-field">
-              <label for="chat-provider">Answer model</label>
-              <select id="chat-provider"></select>
+              <label>Embedding service</label>
+              <p class="service-note">Ollama embeddings</p>
             </div>
-            <button
-              id="advanced-options-toggle"
-              class="secondary-button advanced-toggle"
-              type="button"
-              aria-expanded="false"
-              aria-controls="advanced-options"
-            >
-              Advanced
-            </button>
-          </div>
-          <div id="advanced-options" class="advanced-controls" hidden>
-            <div class="toolbar-field compact-field">
-              <label for="temperature">Temperature</label>
-              <input id="temperature" type="number" min="0" max="2" step="0.05" value="0.2" />
-            </div>
-            <div class="toolbar-field compact-field">
-              <label for="top-p">Top P</label>
-              <input id="top-p" type="number" min="0" max="1" step="0.05" />
-            </div>
-            <div class="toolbar-field compact-field">
-              <label for="max-tokens">Max tokens</label>
-              <input id="max-tokens" type="number" min="1" max="32768" step="1" />
-            </div>
-            <div class="toolbar-field compact-field">
-              <label for="frequency-penalty">Frequency penalty</label>
-              <input id="frequency-penalty" type="number" min="-2" max="2" step="0.1" />
-            </div>
-            <div class="toolbar-field compact-field">
-              <label for="presence-penalty">Presence penalty</label>
-              <input id="presence-penalty" type="number" min="-2" max="2" step="0.1" />
-            </div>
-            <div class="toolbar-field compact-field">
-              <label for="reasoning-effort">Reasoning</label>
-              <select id="reasoning-effort">
-                <option value="">Default</option>
-                <option value="none">None</option>
-                <option value="minimal">Minimal</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="xhigh">XHigh</option>
-              </select>
-            </div>
-            <div class="toolbar-field compact-field">
-              <label for="context-window">Context window</label>
-              <input id="context-window" type="number" min="512" max="262144" step="512" />
-            </div>
-            <div class="toolbar-field compact-field">
-              <label for="top-k-results">Retrieved chunks</label>
-              <input id="top-k-results" type="number" min="1" max="20" step="1" value="6" />
-            </div>
-            <button id="reset-options" class="secondary-button" type="button">Defaults</button>
-          </div>
-          <label for="query">Question</label>
-          <textarea
-            id="query"
-            name="query"
-            rows="4"
-            placeholder="How do I create a custom annotation?"
-            required
-          ></textarea>
-          <div class="button-row">
-            <button type="submit">Ask</button>
-            <button id="reset" class="secondary-button" type="button">Reset</button>
-          </div>
-        </form>
-
-        <section class="progress-panel" aria-live="polite">
-          <h2>Progress</h2>
-          <div id="progress-stages"></div>
-        </section>
-
-        <section class="answer-panel" aria-live="polite">
-          <h1>Answer</h1>
-          <div id="answer" class="answer-content"></div>
-        </section>
-
-        <section class="sources-panel">
-          <h2>Sources</h2>
-          <div id="sources"></div>
-        </section>
-
-        <section class="workspace-panel">
-          <h2>Evidence Board</h2>
-          <div id="task-workspace"></div>
-        </section>
+            <button id="ingest" type="button">Ingest</button>
+          </section>
+        </div>
       </section>
     </main>
     <script src="/static/app.js"></script>
