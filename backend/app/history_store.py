@@ -2,6 +2,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from backend.app.models import AnswerWorkspace, HistoryItem, Source
@@ -103,7 +104,7 @@ class HistoryStore:
     def _row_to_item(self, row: sqlite3.Row) -> HistoryItem:
         sources = [Source.model_validate(source) for source in json.loads(row["sources_json"])]
         workspace_json = row["workspace_json"]
-        workspace = AnswerWorkspace.model_validate(json.loads(workspace_json)) if workspace_json else None
+        workspace = self._load_workspace(workspace_json, row["question"])
         return HistoryItem(
             id=row["id"],
             createdAt=row["created_at"],
@@ -121,3 +122,49 @@ class HistoryStore:
         if workspace is None:
             return None
         return json.dumps(workspace.model_dump())
+
+    def _load_workspace(self, workspace_json: str | None, question: str) -> AnswerWorkspace | None:
+        if not workspace_json:
+            return None
+        payload = json.loads(workspace_json)
+        return AnswerWorkspace.model_validate(self._normalize_workspace(payload, question))
+
+    def _normalize_workspace(self, payload: Any, question: str) -> Any:
+        if not isinstance(payload, dict):
+            return payload
+
+        task = payload.get("task")
+        if not isinstance(task, dict):
+            return payload
+
+        steps = task.get("steps")
+        if not isinstance(steps, list):
+            return payload
+
+        normalized_steps = [
+            self._normalize_workspace_step(step, index=index, question=question)
+            for index, step in enumerate(steps, start=1)
+        ]
+        return {
+            **payload,
+            "task": {
+                **task,
+                "steps": normalized_steps,
+            },
+        }
+
+    def _normalize_workspace_step(self, step: Any, *, index: int, question: str) -> Any:
+        if not isinstance(step, str):
+            return step
+
+        description = " ".join(step.split())
+        return {
+            "id": f"S{index}",
+            "title": description[:80] or f"Step {index}",
+            "description": description,
+            "retrievalQuery": question,
+            "status": "completed",
+            "evidence": [],
+            "result": description,
+            "gaps": [],
+        }

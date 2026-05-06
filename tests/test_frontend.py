@@ -10,14 +10,15 @@ def test_index_separates_ingest_and_ask_controls():
     assert 'id="ingest-version"' in html
     assert 'id="ask-version"' in html
     assert 'id="chat-provider"' in html
-    ingest_panel = html[html.index('id="ingest-panel"') : html.index('id="ask-form"')]
-    ask_panel = html[html.index('id="ask-form"') :]
+    query_panel = html[html.index('id="query-panel"') : html.index('id="ingest-panel"')]
+    ingest_panel = html[html.index('id="ingest-panel"') :]
 
     assert 'for="ingest-version"' in ingest_panel
     assert 'for="ask-version"' not in ingest_panel
     assert 'for="chat-provider"' not in ingest_panel
-    assert 'for="ask-version"' in ask_panel
-    assert 'for="chat-provider"' in ask_panel
+    assert 'id="ask-form"' in query_panel
+    assert 'for="ask-version"' in query_panel
+    assert 'for="chat-provider"' in query_panel
 
 
 def test_app_js_sends_ingest_and_ask_versions_separately():

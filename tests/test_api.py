@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import sqlite3
 
 from fastapi.testclient import TestClient
 import requests
@@ -593,6 +594,59 @@ def test_ask_saves_query_history(tmp_path: Path):
     assert history[0]["answer"].startswith("Step 1")
     assert history[0]["sources"][0]["path"] == "api/java/lang/Runnable.html"
     assert history[0]["workspace"]["task"]["evidence"][0]["id"] == "E1"
+
+
+def test_history_loads_legacy_string_workspace_steps(tmp_path: Path):
+    client, _, _ = make_client(tmp_path)
+    db_path = tmp_path / "history.sqlite3"
+    legacy_workspace = {
+        "task": {
+            "version": "jdk8",
+            "query": "How do I run code in a thread?",
+            "intent": "Answer the user's Java documentation question.",
+            "plannerMode": "deterministic",
+            "steps": [
+                "Identify the Java documentation topic requested by the user.",
+                "Cite the source filenames used in the answer.",
+            ],
+            "evidence": [],
+            "gaps": [],
+        }
+    }
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO query_history (
+                id,
+                created_at,
+                version,
+                question,
+                answer,
+                sources_json,
+                workspace_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy",
+                "2026-05-06T00:00:00+00:00",
+                "jdk8",
+                "How do I run code in a thread?",
+                "Use Runnable.",
+                "[]",
+                json.dumps(legacy_workspace),
+            ),
+        )
+
+    response = client.get("/api/history")
+
+    assert response.status_code == 200
+    steps = response.json()["history"][0]["workspace"]["task"]["steps"]
+    assert steps[0]["id"] == "S1"
+    assert steps[0]["description"] == "Identify the Java documentation topic requested by the user."
+    assert steps[0]["retrievalQuery"] == "How do I run code in a thread?"
+    assert steps[1]["title"] == "Cite the source filenames used in the answer."
 
 
 def test_ingest_returns_friendly_embedding_error_when_ollama_is_offline(tmp_path: Path):
